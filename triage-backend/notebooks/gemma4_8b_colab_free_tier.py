@@ -1,4 +1,5 @@
 import json
+import os
 import random
 from pathlib import Path
 
@@ -10,29 +11,93 @@ from trl import DPOConfig, DPOTrainer
 
 
 def detect_repo_root() -> Path:
+    env_root = os.environ.get("TRIAGE_REPO_ROOT")
+    if env_root and (Path(env_root) / "triage-backend").exists():
+        return Path(env_root)
+
     candidates = [
         Path("/content/META final"),
         Path("/content/drive/MyDrive/META final"),
         Path("/content/drive/MyDrive/META_final"),
+        Path("/content/drive/MyDrive"),
+        Path("/content"),
         Path.cwd(),
         Path.cwd().parent,
     ]
     for candidate in candidates:
         if (candidate / "triage-backend").exists():
             return candidate
-    raise FileNotFoundError(
-        "Could not find the repo root. Clone or copy the repo into Colab first, "
-        "or update detect_repo_root() with the correct path."
-    )
+
+    search_roots = [Path("/content"), Path("/content/drive/MyDrive"), Path.cwd()]
+    for search_root in search_roots:
+        if not search_root.exists():
+            continue
+        for match in search_root.rglob("triage-backend"):
+            if match.is_dir():
+                return match.parent
+
+    raise FileNotFoundError("Could not find the TRIAGE repo root.")
 
 
-REPO_ROOT = detect_repo_root()
-DATASET_PATHS = [
-    REPO_ROOT / "triage-backend/data/full_training/hf_dpo_pairs.jsonl",
-    REPO_ROOT / "triage-backend/data/full_training/dpo_pairs.jsonl",
-    REPO_ROOT / "triage-backend/data/full_training/healthcare_dpo.jsonl",
-    REPO_ROOT / "triage-backend/data/demo/dpo_pairs.jsonl",
-]
+def resolve_dataset_paths(repo_root: Path | None) -> list[Path]:
+    preferred: list[Path] = []
+    if repo_root is not None:
+        preferred.extend([
+            repo_root / "triage-backend/data/full_training/hf_dpo_pairs.jsonl",
+            repo_root / "triage-backend/data/full_training/dpo_pairs.jsonl",
+            repo_root / "triage-backend/data/full_training/healthcare_dpo.jsonl",
+            repo_root / "triage-backend/data/demo/dpo_pairs.jsonl",
+        ])
+
+    env_data_root = os.environ.get("TRIAGE_DATA_ROOT")
+    if env_data_root:
+        data_root = Path(env_data_root)
+        preferred.extend([
+            data_root / "full_training/hf_dpo_pairs.jsonl",
+            data_root / "full_training/dpo_pairs.jsonl",
+            data_root / "full_training/healthcare_dpo.jsonl",
+            data_root / "demo/dpo_pairs.jsonl",
+        ])
+
+    resolved: list[Path] = [path for path in preferred if path.exists()]
+    if resolved:
+        return resolved
+
+    filenames = {
+        "hf_dpo_pairs.jsonl",
+        "dpo_pairs.jsonl",
+        "healthcare_dpo.jsonl",
+    }
+    fallback_matches: list[Path] = []
+    search_roots = [Path("/content"), Path("/content/drive/MyDrive"), Path.cwd()]
+    for search_root in search_roots:
+        if not search_root.exists():
+            continue
+        for match in search_root.rglob("*.jsonl"):
+            if match.name in filenames or (
+                match.name == "dpo_pairs.jsonl"
+                and any(part in {"demo", "full_training"} for part in match.parts)
+            ):
+                fallback_matches.append(match)
+
+    deduped: list[Path] = []
+    seen = set()
+    for match in fallback_matches:
+        if match in seen:
+            continue
+        seen.add(match)
+        deduped.append(match)
+    return deduped
+
+
+try:
+    REPO_ROOT = detect_repo_root()
+    print(f"Detected repo root: {REPO_ROOT}")
+except FileNotFoundError:
+    REPO_ROOT = None
+    print("Repo root not found. Falling back to dataset file discovery.")
+
+DATASET_PATHS = resolve_dataset_paths(REPO_ROOT)
 MODEL_ID = "google/gemma-4-8b-it"
 OUTPUT_DIR = Path("/content/triage-dpo-gemma")
 MAX_PROMPT_CHARS = 1600
@@ -99,7 +164,16 @@ def load_all_datasets(paths: list[Path], max_samples: int | None = None) -> tupl
         counts[path.name] = added
 
     if not rows:
-        raise RuntimeError("No valid DPO rows found. Check the dataset paths above.")
+        available = "\n".join(f"  - {path}" for path in paths) or "  - none"
+        raise RuntimeError(
+            "No valid DPO rows found.\n"
+            "Looked at:\n"
+            f"{available}\n\n"
+            "Fix by either:\n"
+            "1. cloning/copying the whole repo into /content or Drive, or\n"
+            "2. setting TRIAGE_REPO_ROOT or TRIAGE_DATA_ROOT, or\n"
+            "3. uploading the JSONL files directly into Colab."
+        )
 
     random.Random(SEED).shuffle(rows)
     if max_samples is not None:

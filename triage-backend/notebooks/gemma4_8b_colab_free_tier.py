@@ -1,77 +1,213 @@
+import json
+import random
+from pathlib import Path
+
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, TrainingArguments
+from datasets import Dataset
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from trl import DPOTrainer
-from datasets import load_dataset # Assuming dataset loading
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from trl import DPOConfig, DPOTrainer
 
-# 1. Choose Gemma 4 8B (or equivalent like Gemma 2 9B depending on Exact HuggingFace Repo Name)
-model_id = "google/gemma-4-8b-it" 
 
-# 2. Crucial: The 4-Bit Quantization Config (Saves ~10GB of VRAM)
+def detect_repo_root() -> Path:
+    candidates = [
+        Path("/content/META final"),
+        Path("/content/drive/MyDrive/META final"),
+        Path("/content/drive/MyDrive/META_final"),
+        Path.cwd(),
+        Path.cwd().parent,
+    ]
+    for candidate in candidates:
+        if (candidate / "triage-backend").exists():
+            return candidate
+    raise FileNotFoundError(
+        "Could not find the repo root. Clone or copy the repo into Colab first, "
+        "or update detect_repo_root() with the correct path."
+    )
+
+
+REPO_ROOT = detect_repo_root()
+DATASET_PATHS = [
+    REPO_ROOT / "triage-backend/data/full_training/hf_dpo_pairs.jsonl",
+    REPO_ROOT / "triage-backend/data/full_training/dpo_pairs.jsonl",
+    REPO_ROOT / "triage-backend/data/full_training/healthcare_dpo.jsonl",
+    REPO_ROOT / "triage-backend/data/demo/dpo_pairs.jsonl",
+]
+MODEL_ID = "google/gemma-4-8b-it"
+OUTPUT_DIR = Path("/content/triage-dpo-gemma")
+MAX_PROMPT_CHARS = 1600
+MAX_RESPONSE_CHARS = 900
+MAX_SAMPLES = None
+SEED = 42
+
+
+def normalize_text(value, max_chars: int) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        text = json.dumps(value, ensure_ascii=False)
+    else:
+        text = str(value)
+    text = " ".join(text.split()).strip()
+    return text[:max_chars]
+
+
+def load_all_datasets(paths: list[Path], max_samples: int | None = None) -> tuple[Dataset, dict[str, int]]:
+    rows: list[dict[str, str]] = []
+    counts: dict[str, int] = {}
+    seen: set[tuple[str, str, str]] = set()
+
+    for path in paths:
+        if not path.exists():
+            print(f"Skipping missing dataset: {path}")
+            continue
+
+        added = 0
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                if not all(key in row for key in ("prompt", "chosen", "rejected")):
+                    continue
+
+                prompt = normalize_text(row["prompt"], MAX_PROMPT_CHARS)
+                chosen = normalize_text(row["chosen"], MAX_RESPONSE_CHARS)
+                rejected = normalize_text(row["rejected"], MAX_RESPONSE_CHARS)
+
+                if not prompt or not chosen or not rejected or chosen == rejected:
+                    continue
+
+                key = (prompt, chosen, rejected)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                rows.append({
+                    "prompt": prompt,
+                    "chosen": chosen,
+                    "rejected": rejected,
+                    "source_file": path.name,
+                })
+                added += 1
+
+        counts[path.name] = added
+
+    if not rows:
+        raise RuntimeError("No valid DPO rows found. Check the dataset paths above.")
+
+    random.Random(SEED).shuffle(rows)
+    if max_samples is not None:
+        rows = rows[:max_samples]
+
+    return Dataset.from_list(rows), counts
+
+
+dataset, dataset_counts = load_all_datasets(DATASET_PATHS, max_samples=MAX_SAMPLES)
+dataset_split = dataset.train_test_split(test_size=0.05, seed=SEED)
+train_dataset = dataset_split["train"]
+eval_dataset = dataset_split["test"]
+
+print("Loaded combined DPO dataset:")
+for name, count in dataset_counts.items():
+    print(f"  - {name}: {count:,} pairs")
+print(f"  - train: {len(train_dataset):,}")
+print(f"  - eval:  {len(eval_dataset):,}")
+
+compute_dtype = (
+    torch.bfloat16
+    if torch.cuda.is_available() and torch.cuda.get_device_capability(0)[0] >= 8
+    else torch.float16
+)
+
 bnb_config = BitsAndBytesConfig(
     load_in_4bit=True,
     bnb_4bit_use_double_quant=True,
     bnb_4bit_quant_type="nf4",
-    bnb_4bit_compute_dtype=torch.bfloat16 # Uses newer memory efficient types
+    bnb_4bit_compute_dtype=compute_dtype,
 )
 
-print(f"Loading {model_id} in 4-bit...")
-tokenizer = AutoTokenizer.from_pretrained(model_id)
-
-# Gemma models usually require adding EOS token explicitly
-tokenizer.pad_token = tokenizer.eos_token
+print(f"Loading {MODEL_ID} in 4-bit...")
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
 
 model = AutoModelForCausalLM.from_pretrained(
-    model_id,
+    MODEL_ID,
     quantization_config=bnb_config,
     device_map="auto",
-    use_cache=False # Crucial for saving memory during training
+    torch_dtype=compute_dtype,
+    use_cache=False,
 )
+model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
 
-# Prepare model for 4-bit training
-model = prepare_model_for_kbit_training(model)
-
-# 3. LoRA Config: Only train ~2% of the parameters
 lora_config = LoraConfig(
-    r=8, 
+    r=8,
     lora_alpha=16,
     target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
     lora_dropout=0.05,
     bias="none",
-    task_type="CAUSAL_LM"
+    task_type="CAUSAL_LM",
 )
 model = get_peft_model(model, lora_config)
+model.print_trainable_parameters()
 
-# 4. Load your dataset (assuming it has 'prompt', 'chosen', and 'rejected' columns)
-# dataset = load_dataset("your_dpo_triage_dataset")
-
-# 5. Training Arguments designed explicitly to heavily restrict GPU Usage
-training_args = TrainingArguments(
-    output_dir="./triage-dpo-gemma",
-    per_device_train_batch_size=1,       # MUST BE 1 
-    gradient_accumulation_steps=4,       # Simulates a batch size of 4
-    optim="paged_adamw_32bit",           # Offloads optimizer states to CPU RAM if needed
-    save_steps=50,
-    logging_steps=10,
+training_args = DPOConfig(
+    output_dir=str(OUTPUT_DIR),
+    per_device_train_batch_size=1,
+    per_device_eval_batch_size=1,
+    gradient_accumulation_steps=4,
+    gradient_checkpointing=True,
     learning_rate=2e-5,
-    bf16=True,                           # Faster and lighter than FP32
-    max_grad_norm=0.3,
     warmup_ratio=0.03,
     lr_scheduler_type="cosine",
+    num_train_epochs=1,
+    max_length=768,
+    max_prompt_length=384,
+    logging_steps=10,
+    eval_strategy="steps",
+    eval_steps=50,
+    save_strategy="steps",
+    save_steps=50,
+    save_total_limit=2,
+    optim="paged_adamw_8bit",
+    report_to="none",
+    remove_unused_columns=False,
+    fp16=compute_dtype == torch.float16,
+    bf16=compute_dtype == torch.bfloat16,
 )
 
-# 6. Initialize DPO Trainer
-# Ensure dataset is loaded before trainer initialization 
-# trainer = DPOTrainer(
-#     model=model,
-#     ref_model=None, # Peft automatically handles reference when target is quantized
-#     args=training_args,
-#     beta=0.1,
-#     train_dataset=dataset['train'], 
-#     tokenizer=tokenizer,
-#     max_length=1024,        # Force short sequences to prevent memory spiking
-#     max_prompt_length=512,  # Keep prompts concise
-# )
+trainer_kwargs = {
+    "model": model,
+    "ref_model": None,
+    "args": training_args,
+    "beta": 0.1,
+    "train_dataset": train_dataset,
+    "eval_dataset": eval_dataset,
+    "max_length": 768,
+    "max_prompt_length": 384,
+}
 
-print("Initialization complete! Ready to start DPO training on Colab Free Tier.")
-# trainer.train()
+try:
+    trainer = DPOTrainer(
+        processing_class=tokenizer,
+        **trainer_kwargs,
+    )
+except TypeError:
+    trainer = DPOTrainer(
+        tokenizer=tokenizer,
+        **trainer_kwargs,
+    )
+
+print("Initialization complete. Starting DPO training...")
+trainer.train()
+
+final_dir = OUTPUT_DIR / "final_adapter"
+trainer.model.save_pretrained(final_dir)
+tokenizer.save_pretrained(final_dir)
+print(f"Training complete. Adapter saved to {final_dir}")

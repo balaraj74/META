@@ -90,6 +90,42 @@ def resolve_dataset_paths(repo_root: Path | None) -> list[Path]:
     return deduped
 
 
+def maybe_upload_datasets(existing_paths: list[Path]) -> list[Path]:
+    if existing_paths:
+        return existing_paths
+
+    try:
+        from google.colab import files  # type: ignore[import-not-found]
+    except ImportError:
+        return existing_paths
+
+    print(
+        "No repo or dataset files were found automatically.\n"
+        "Upload one or more DPO JSONL files now:\n"
+        "  - hf_dpo_pairs.jsonl\n"
+        "  - dpo_pairs.jsonl\n"
+        "  - healthcare_dpo.jsonl\n"
+        "  - any other JSONL with prompt/chosen/rejected fields"
+    )
+    uploaded = files.upload()
+    if not uploaded:
+        return existing_paths
+
+    upload_dir = Path("/content/triage_uploaded_datasets")
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    saved_paths: list[Path] = []
+    for name, data in uploaded.items():
+        target = upload_dir / name
+        target.write_bytes(data)
+        saved_paths.append(target)
+
+    print("Uploaded dataset files:")
+    for path in saved_paths:
+        print(f"  - {path}")
+    return saved_paths
+
+
 try:
     REPO_ROOT = detect_repo_root()
     print(f"Detected repo root: {REPO_ROOT}")
@@ -98,6 +134,7 @@ except FileNotFoundError:
     print("Repo root not found. Falling back to dataset file discovery.")
 
 DATASET_PATHS = resolve_dataset_paths(REPO_ROOT)
+DATASET_PATHS = maybe_upload_datasets(DATASET_PATHS)
 MODEL_ID = "google/gemma-4-8b-it"
 OUTPUT_DIR = Path("/content/triage-dpo-gemma")
 MAX_PROMPT_CHARS = 1600

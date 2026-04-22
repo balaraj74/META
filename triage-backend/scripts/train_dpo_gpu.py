@@ -251,11 +251,12 @@ def train(
         lr_scheduler_type="cosine",
         warmup_ratio=0.1,
         beta=0.1,                             # DPO temperature
-        max_length=384,                       # Aggressively reduce to fit 1.5B DPO within 4GB VRAM
+        max_length=384,                       # fits within 4 GB VRAM
+        max_prompt_length=192,                # half of max_length
         fp16=False,
         bf16=True,                            # RTX 2050 supports bf16
         logging_steps=10,
-        eval_strategy="steps",               # TRL 1.2 param name
+        eval_strategy="steps",
         eval_steps=50,
         save_strategy="steps",
         save_steps=100,
@@ -294,14 +295,25 @@ def train(
         model_id=model_id,
     )
 
-    trainer = DPOTrainer(
-        model=model,
-        args=dpo_config,
-        train_dataset=train_ds,
-        eval_dataset=eval_ds,
-        processing_class=tokenizer,
-        callbacks=[live_cb],
-    )
+    # TRL 0.11.x uses 'tokenizer'; newer TRL (0.12+) renamed it 'processing_class'
+    try:
+        trainer = DPOTrainer(
+            model=model,
+            args=dpo_config,
+            train_dataset=train_ds,
+            eval_dataset=eval_ds,
+            processing_class=tokenizer,
+            callbacks=[live_cb],
+        )
+    except TypeError:
+        trainer = DPOTrainer(
+            model=model,
+            args=dpo_config,
+            train_dataset=train_ds,
+            eval_dataset=eval_ds,
+            tokenizer=tokenizer,
+            callbacks=[live_cb],
+        )
 
     start = time.perf_counter()
     train_result = trainer.train()

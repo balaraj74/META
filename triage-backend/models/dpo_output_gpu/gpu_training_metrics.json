@@ -1,13 +1,13 @@
 {
   "model": "Qwen/Qwen2.5-0.5B-Instruct",
-  "epochs": 5,
-  "train_samples": 7125,
-  "eval_samples": 375,
-  "train_loss": 0.0267,
-  "train_runtime_seconds": 29684.1,
-  "train_steps": 4455,
-  "samples_per_second": 1.2,
+  "epochs": 1,
+  "train_samples": 190,
+  "eval_samples": 10,
+  "train_loss": 0.2483,
+  "train_runtime_seconds": 268.5,
+  "train_steps": 23,
+  "samples_per_second": 0.71,
   "gpu": "NVIDIA GeForce RTX 2050",
-  "vram_peak_gb": 3.06,
+  "vram_peak_gb": 2.84,
   "output_dir": "/home/balaraj/META final/triage-backend/models/dpo_output_gpu/final"
 }

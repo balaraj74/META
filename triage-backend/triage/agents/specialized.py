@@ -31,6 +31,29 @@ from triage.env.state import (
 logger = logging.getLogger(__name__)
 
 
+def _expert_focus(state: EnvironmentState) -> tuple[str, dict[str, float]]:
+    signals = {
+        "cost": state.expert_signals.get("cost_weight", 0.3),
+        "quality": state.expert_signals.get("quality_weight", 0.5),
+        "speed": state.expert_signals.get("speed_weight", 0.2),
+    }
+    return max(signals, key=signals.get), signals
+
+
+def _focus_priority(base: int, focus: str, *, quality: int = 0, speed: int = 0, cost: int = 0) -> int:
+    adjustment = {"quality": quality, "speed": speed, "cost": cost}.get(focus, 0)
+    return max(0, min(10, base + adjustment))
+
+
+def _focus_note(focus: str, signals: dict[str, float]) -> str:
+    return (
+        f" [expert_focus={focus}"
+        f" q={signals['quality']:.2f}"
+        f" s={signals['speed']:.2f}"
+        f" c={signals['cost']:.2f}]"
+    )
+
+
 # ─── CMO Oversight Agent ────────────────────────────────────
 
 class CMOOversightAgent(BaseAgent):
@@ -55,6 +78,7 @@ class CMOOversightAgent(BaseAgent):
 
     def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
         actions: list[AgentAction] = []
+        focus, signals = _expert_focus(state)
 
         # Handle escalations first
         for msg in inbox:
@@ -68,8 +92,8 @@ class CMOOversightAgent(BaseAgent):
                         agent_type=self.agent_type,
                         action_type=ActionType.OVERRIDE_DECISION,
                         target_id=self._patient_idx(msg.patient_id, state),
-                        priority=msg.priority,
-                        reasoning=reason,
+                        priority=_focus_priority(msg.priority, focus, quality=1, speed=0, cost=-1),
+                        reasoning=f"{reason}{_focus_note(focus, signals)}",
                     ))
 
         # Activate overflow if ICU is near capacity
@@ -79,8 +103,8 @@ class CMOOversightAgent(BaseAgent):
             actions.append(AgentAction(
                 agent_type=self.agent_type,
                 action_type=ActionType.ACTIVATE_OVERFLOW,
-                priority=8,
-                reasoning="ICU occupancy >90% — activating overflow protocol",
+                priority=_focus_priority(8, focus, quality=1, speed=1, cost=-1),
+                reasoning=f"ICU occupancy >90% — activating overflow protocol{_focus_note(focus, signals)}",
             ))
 
         # Check for untreated critical patients
@@ -90,8 +114,8 @@ class CMOOversightAgent(BaseAgent):
                     agent_type=self.agent_type,
                     action_type=ActionType.ASSIGN_TREATMENT,
                     target_id=i,
-                    priority=9,
-                    reasoning=f"CMO emergency intervention — untreated critical patient {p.name}",
+                    priority=_focus_priority(9, focus, quality=1, speed=0, cost=-1),
+                    reasoning=f"CMO emergency intervention — untreated critical patient {p.name}{_focus_note(focus, signals)}",
                 ))
                 break  # one at a time
 
@@ -107,6 +131,10 @@ Escalations received: {len(escalations)}
 
 Critical patients without treatment: {sum(1 for p in state.patients if p.status == PatientStatus.CRITICAL and not p.treatment_plan)}
 ICU occupancy: {state.icu_occupancy:.1%}
+Expert preference vector:
+- quality={state.expert_signals.get("quality_weight", 0.5):.2f}
+- speed={state.expert_signals.get("speed_weight", 0.2):.2f}
+- cost={state.expert_signals.get("cost_weight", 0.3):.2f}
 
 Decide what actions to take. Prioritize life-saving interventions.
 """
@@ -156,16 +184,24 @@ class ERTriageAgent(BaseAgent):
 
     def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
         actions: list[AgentAction] = []
+        focus, signals = _expert_focus(state)
 
         for i, p in enumerate(state.patients):
             # Triage new incoming patients
             if p.status == PatientStatus.INCOMING:
+                triage_priority = _focus_priority(
+                    max(p.triage_score, 4),
+                    focus,
+                    quality=1 if p.triage_score >= 8 else 0,
+                    speed=1,
+                    cost=-1 if p.triage_score < 5 else 0,
+                )
                 actions.append(AgentAction(
                     agent_type=self.agent_type,
                     action_type=ActionType.TRIAGE_PATIENT,
                     target_id=i,
-                    priority=p.triage_score,
-                    reasoning=f"Triaging incoming patient {p.name} — condition: {p.condition}",
+                    priority=triage_priority,
+                    reasoning=f"Triaging incoming patient {p.name} — condition: {p.condition}{_focus_note(focus, signals)}",
                 ))
                 # Route critical to ICU
                 if p.triage_score >= 8:
@@ -173,8 +209,8 @@ class ERTriageAgent(BaseAgent):
                         agent_type=self.agent_type,
                         action_type=ActionType.TRANSFER_TO_ICU,
                         target_id=i,
-                        priority=9,
-                        reasoning=f"Critical patient {p.name} (score {p.triage_score}) requires ICU",
+                        priority=_focus_priority(9, focus, quality=1, speed=1, cost=-1),
+                        reasoning=f"Critical patient {p.name} (score {p.triage_score}) requires ICU{_focus_note(focus, signals)}",
                     ))
 
             # Escalate deteriorating patients
@@ -229,6 +265,7 @@ class ICUManagementAgent(BaseAgent):
 
     def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
         actions: list[AgentAction] = []
+        focus, signals = _expert_focus(state)
 
         for msg in inbox:
             if msg.request_type == "icu_bed_request" and msg.patient_id:
@@ -236,8 +273,8 @@ class ICUManagementAgent(BaseAgent):
                     agent_type=self.agent_type,
                     action_type=ActionType.TRANSFER_TO_ICU,
                     target_id=self._patient_idx(msg.patient_id, state),
-                    priority=max(msg.priority, 8),
-                    reasoning=f"ICU_MANAGER accepted delegated bed request: {msg.content[:100]}",
+                    priority=_focus_priority(max(msg.priority, 8), focus, quality=1, speed=1, cost=-1),
+                    reasoning=f"ICU_MANAGER accepted delegated bed request: {msg.content[:100]}{_focus_note(focus, signals)}",
                 ))
 
         # Assign treatment to critical patients in ICU
@@ -247,8 +284,8 @@ class ICUManagementAgent(BaseAgent):
                     agent_type=self.agent_type,
                     action_type=ActionType.ASSIGN_TREATMENT,
                     target_id=i,
-                    priority=8,
-                    reasoning=f"Assigning ICU treatment plan for {p.name}",
+                    priority=_focus_priority(8, focus, quality=1, speed=0, cost=-1),
+                    reasoning=f"Assigning ICU treatment plan for {p.name}{_focus_note(focus, signals)}",
                 ))
 
             # Discharge stable ICU patients to free beds
@@ -257,8 +294,8 @@ class ICUManagementAgent(BaseAgent):
                     agent_type=self.agent_type,
                     action_type=ActionType.TRANSFER_TO_WARD,
                     target_id=i,
-                    priority=3,
-                    reasoning=f"Transferring stable patient {p.name} out of ICU",
+                    priority=_focus_priority(3, focus, quality=-1, speed=1, cost=2),
+                    reasoning=f"Transferring stable patient {p.name} out of ICU{_focus_note(focus, signals)}",
                 ))
 
         # Request specialist if many critical patients
@@ -270,8 +307,8 @@ class ICUManagementAgent(BaseAgent):
             actions.append(AgentAction(
                 agent_type=self.agent_type,
                 action_type=ActionType.REQUEST_SPECIALIST,
-                priority=7,
-                reasoning=f"High ICU critical load ({critical_icu}) — requesting specialist backup",
+                priority=_focus_priority(7, focus, quality=1, speed=1, cost=-1),
+                reasoning=f"High ICU critical load ({critical_icu}) — requesting specialist backup{_focus_note(focus, signals)}",
             ))
 
         return actions[:4]
@@ -321,6 +358,7 @@ class PharmacyAgent(BaseAgent):
 
     def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
         actions: list[AgentAction] = []
+        focus, signals = _expert_focus(state)
 
         for msg in inbox:
             if msg.request_type == "medication_request" and msg.patient_id:
@@ -328,19 +366,28 @@ class PharmacyAgent(BaseAgent):
                     agent_type=self.agent_type,
                     action_type=ActionType.ORDER_MEDICATION,
                     target_id=self._patient_idx(msg.patient_id, state),
-                    priority=max(msg.priority, 7),
-                    reasoning=f"PHARMACY accepted delegated medication request: {msg.content[:100]}",
+                    priority=_focus_priority(max(msg.priority, 7), focus, quality=1, speed=0, cost=-1),
+                    reasoning=f"PHARMACY accepted delegated medication request: {msg.content[:100]}{_focus_note(focus, signals)}",
                 ))
 
         # Order medications for patients with treatment plans but no meds
         for i, p in enumerate(state.patients):
             if p.treatment_plan and not p.medications and p.status != PatientStatus.DECEASED:
+                base_priority = 6
+                if focus == "cost" and p.status != PatientStatus.CRITICAL:
+                    base_priority = 4
+                if focus == "quality" and p.status == PatientStatus.CRITICAL:
+                    base_priority = 8
                 actions.append(AgentAction(
                     agent_type=self.agent_type,
                     action_type=ActionType.ORDER_MEDICATION,
                     target_id=i,
-                    priority=6,
-                    reasoning=f"Filling medication order for {p.name} — treatment: {p.treatment_plan[0] if p.treatment_plan else 'generic'}",
+                    priority=_focus_priority(base_priority, focus, quality=1, speed=0, cost=-1),
+                    reasoning=(
+                        f"Filling medication order for {p.name} — treatment: "
+                        f"{p.treatment_plan[0] if p.treatment_plan else 'generic'}"
+                        f"{_focus_note(focus, signals)}"
+                    ),
                 ))
 
         # Check for low stock items and alert
@@ -403,14 +450,19 @@ class HRRosteringAgent(BaseAgent):
 
     def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
         actions: list[AgentAction] = []
+        focus, signals = _expert_focus(state)
 
         # Request staff if ratio is low
-        if state.resources.staff_ratio < 0.6:
+        staffing_threshold = 0.75 if focus == "speed" else 0.6 if focus == "quality" else 0.5
+        if state.resources.staff_ratio < staffing_threshold:
             actions.append(AgentAction(
                 agent_type=self.agent_type,
                 action_type=ActionType.REQUEST_STAFF,
-                priority=7,
-                reasoning=f"Staff ratio critically low ({state.resources.staff_ratio:.0%}) — requesting emergency callback",
+                priority=_focus_priority(7, focus, quality=0, speed=2, cost=-1),
+                reasoning=(
+                    f"Staff ratio critically low ({state.resources.staff_ratio:.0%}) "
+                    f"— requesting emergency callback{_focus_note(focus, signals)}"
+                ),
             ))
             try:
                 asyncio.ensure_future(self.escalate(
@@ -426,8 +478,8 @@ class HRRosteringAgent(BaseAgent):
             actions.append(AgentAction(
                 agent_type=self.agent_type,
                 action_type=ActionType.FLAG_POLICY_VIOLATION,
-                priority=5,
-                reasoning="Periodic fatigue check — flagging potential POL-004 violation",
+                priority=_focus_priority(5, focus, quality=1, speed=0, cost=-1),
+                reasoning=f"Periodic fatigue check — flagging potential POL-004 violation{_focus_note(focus, signals)}",
             ))
 
         return actions[:2]
@@ -472,6 +524,7 @@ class ITSystemsAgent(BaseAgent):
 
     def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
         actions: list[AgentAction] = []
+        focus, signals = _expert_focus(state)
 
         # Monitor IT uptime
         if state.resources.it_uptime < 0.8:
@@ -489,8 +542,18 @@ class ITSystemsAgent(BaseAgent):
             actions.append(AgentAction(
                 agent_type=self.agent_type,
                 action_type=ActionType.FLAG_POLICY_VIOLATION,
-                priority=6,
-                reasoning="Compliance scan detected policy violation in system logs",
+                priority=_focus_priority(6, focus, quality=2, speed=1, cost=-1),
+                reasoning=f"Compliance scan detected policy violation in system logs{_focus_note(focus, signals)}",
+            ))
+
+        recent_drifts = state.drift_history[-3:]
+        drift_domains = {event.get("type") for event in recent_drifts}
+        if {"contract_drift", "regulatory_drift"} & drift_domains:
+            actions.append(AgentAction(
+                agent_type=self.agent_type,
+                action_type=ActionType.UPDATE_EHR,
+                priority=_focus_priority(7, focus, quality=1, speed=1, cost=1),
+                reasoning=f"Syncing downstream systems after drift event(s): {sorted(drift_domains)}{_focus_note(focus, signals)}",
             ))
 
         # Update EHR for patients with missing records
@@ -500,14 +563,14 @@ class ITSystemsAgent(BaseAgent):
                     agent_type=self.agent_type,
                     action_type=ActionType.VERIFY_INSURANCE,
                     target_id=i,
-                    priority=3,
-                    reasoning=f"Insurance verification pending for {p.name}",
+                    priority=_focus_priority(3, focus, quality=0, speed=0, cost=3),
+                    reasoning=f"Insurance verification pending for {p.name}{_focus_note(focus, signals)}",
                 ))
                 break  # one at a time
 
         # Respond to policy change messages
         for msg in inbox:
-            if "POLICY" in msg.content.upper():
+            if any(keyword in msg.content.upper() for keyword in ("POLICY", "CONTRACT", "REGULATORY")):
                 try:
                     asyncio.ensure_future(self.broadcast(
                         f"📋 IT acknowledges policy change: {msg.content[:100]}",

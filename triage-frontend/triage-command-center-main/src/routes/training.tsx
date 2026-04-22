@@ -31,7 +31,15 @@ function TrainingPage() {
             <LossCurveChart steps={s.lossSteps} train={s.trainLoss} evalL={s.evalLoss} live={s.isTraining} />
           </div>
           <div className="col-span-12 lg:col-span-7">
-            <BeforeAfterComparison baseline={s.baselineRewards} trained={s.trainedRewards} />
+            <BeforeAfterComparison
+              baseline={s.baselineRewards}
+              trained={s.trainedRewards}
+              rewardMargin={s.rewardMargin}
+              dpoAccuracy={s.dpoAccuracy}
+              comparisonStep={s.comparisonStep}
+              totalSteps={s.totalSteps}
+              live={s.isTraining}
+            />
           </div>
         </div>
         <MemoryRow />
@@ -152,34 +160,78 @@ function LossCurveChart({
   );
 }
 
-function BeforeAfterComparison({ baseline, trained }: { baseline: number[]; trained: number[] }) {
+function BeforeAfterComparison({
+  baseline,
+  trained,
+  rewardMargin,
+  dpoAccuracy,
+  comparisonStep,
+  totalSteps,
+  live,
+}: {
+  baseline: number[];
+  trained: number[];
+  rewardMargin: number;
+  dpoAccuracy: number;
+  comparisonStep: number;
+  totalSteps: number;
+  live: boolean;
+}) {
   const data = baseline.map((b, i) => ({
     episode: `EP${i + 1}`,
     Baseline: b,
     Trained: trained[i],
   }));
-  const baseAvg = baseline.length ? baseline.reduce((a, b) => a + b, 0) / baseline.length : 0;
-  const trainAvg = trained.length ? trained.reduce((a, b) => a + b, 0) / trained.length : 0;
-  const delta = trainAvg - baseAvg;
+  const baseAvg  = baseline.length ? baseline.reduce((a, b) => a + b, 0) / baseline.length : 0;
+  const trainAvg = trained.length  ? trained.reduce((a, b)  => a + b, 0) / trained.length  : 0;
+  const delta    = trainAvg - baseAvg;
+
+  // Change the key every time step changes → forces Recharts to re-mount bars → animation replay
+  const animKey = `cmp-${comparisonStep}`;
+
   return (
     <div className="border border-border bg-surface" style={{ borderRadius: 8 }}>
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <div className="font-mono text-[10px] uppercase tracking-widest text-text-muted">
-          Reward Comparison
+      {/* ── Header ── */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+        <div className="flex items-center gap-2">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-text-muted">
+            Reward Comparison
+          </div>
+          {live && (
+            <span className="inline-flex items-center gap-1 font-mono text-[9px] text-stable">
+              <span className="h-1.5 w-1.5 rounded-full bg-stable pulse-dot" />
+              LIVE
+            </span>
+          )}
         </div>
-        <div className="font-mono text-[10px] text-stable">+{delta.toFixed(1)} ↑ avg</div>
+        <div className="flex items-center gap-3">
+          {comparisonStep > 0 && (
+            <span className="font-mono text-[9px] text-text-muted">
+              step{" "}
+              <span className="text-text-primary">{comparisonStep.toLocaleString()}</span>
+              <span className="text-text-muted"> / {totalSteps.toLocaleString()}</span>
+            </span>
+          )}
+          <div className="font-mono text-[10px] text-stable">+{delta.toFixed(1)} ↑ avg</div>
+        </div>
       </div>
-      <div className="grid grid-cols-3 gap-2 px-3 pt-3">
-        <Stat label="Baseline avg" value={baseAvg.toFixed(1)} color="var(--text-muted)" />
-        <Stat label="Trained avg" value={trainAvg.toFixed(1)} color="var(--clinical-blue)" />
-        <Stat label="Δ improvement" value={`+${delta.toFixed(1)}`} color="var(--stable-green)" />
+
+      {/* ── Stats row ── */}
+      <div className="grid grid-cols-5 gap-2 px-3 pt-3">
+        <Stat label="Baseline avg"  value={baseAvg.toFixed(1)}             color="var(--text-muted)"    />
+        <Stat label="Trained avg"   value={trainAvg.toFixed(1)}            color="var(--clinical-blue)" />
+        <Stat label="Δ improvement" value={`+${delta.toFixed(1)}`}         color="var(--stable-green)"  />
+        <Stat label="DPO Accuracy"  value={dpoAccuracy > 0 ? `${dpoAccuracy.toFixed(1)}%` : "—"}   color="var(--warning-amber)" />
+        <Stat label="Reward Margin" value={rewardMargin > 0 ? rewardMargin.toFixed(3) : "—"}       color="var(--clinical-blue)" />
       </div>
-      <div className="px-3 pb-3" style={{ height: 240 }}>
+
+      {/* ── Animated bar chart ── */}
+      <div className="px-3 pb-3" style={{ height: 220 }}>
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 12, right: 8, bottom: 0, left: -10 }}>
+          <BarChart key={animKey} data={data} margin={{ top: 12, right: 8, bottom: 0, left: -10 }}>
             <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" vertical={false} />
             <XAxis dataKey="episode" stroke="var(--text-muted)" tick={{ fontFamily: "DM Mono", fontSize: 10 }} />
-            <YAxis stroke="var(--text-muted)" tick={{ fontFamily: "DM Mono", fontSize: 10 }} />
+            <YAxis stroke="var(--text-muted)" tick={{ fontFamily: "DM Mono", fontSize: 10 }} domain={[0, 'auto']} />
             <Tooltip
               contentStyle={{
                 background: "var(--surface)",
@@ -188,10 +240,24 @@ function BeforeAfterComparison({ baseline, trained }: { baseline: number[]; trai
                 fontFamily: "DM Mono",
                 fontSize: 11,
               }}
+              cursor={{ fill: "rgba(255,255,255,0.04)" }}
             />
             <Legend wrapperStyle={{ fontFamily: "DM Mono", fontSize: 10 }} />
-            <Bar dataKey="Baseline" fill="var(--text-muted)" />
-            <Bar dataKey="Trained" fill="var(--clinical-blue)" />
+            <Bar
+              dataKey="Baseline"
+              fill="var(--text-muted)"
+              isAnimationActive={true}
+              animationDuration={600}
+              animationEasing="ease-out"
+            />
+            <Bar
+              dataKey="Trained"
+              fill="var(--clinical-blue)"
+              isAnimationActive={true}
+              animationDuration={800}
+              animationEasing="ease-out"
+              radius={[2, 2, 0, 0]}
+            />
           </BarChart>
         </ResponsiveContainer>
       </div>

@@ -466,6 +466,9 @@ class EnvironmentState:
     agent_states: dict[AgentType, AgentState] = field(default_factory=dict)
     active_policies: dict[str, Policy] = field(default_factory=dict)
     expert_signals: dict[str, float] = field(default_factory=dict)
+    contract_constraints: dict[str, dict[str, Any]] = field(default_factory=dict)
+    regulatory_constraints: dict[str, dict[str, Any]] = field(default_factory=dict)
+    drift_history: list[dict[str, Any]] = field(default_factory=list)
     message_history: list[AgentMessage] = field(default_factory=list)
     action_history: list[AgentAction] = field(default_factory=list)
     app_audit_log: list[AppAuditEvent] = field(default_factory=list)
@@ -484,6 +487,27 @@ class EnvironmentState:
                 "cost_weight": 0.3,
                 "quality_weight": 0.5,
                 "speed_weight": 0.2,
+            }
+        if not self.contract_constraints:
+            self.contract_constraints = {
+                "insurance_portal": {
+                    "schema_version": "v1",
+                    "member_id_field": "member_id",
+                    "coverage_field": "coverage_percent",
+                    "authorization_mode": "waived_for_emergency",
+                    "requires_portal_reference": False,
+                },
+            }
+        if not self.regulatory_constraints:
+            self.regulatory_constraints = {
+                "hipaa": {
+                    "max_access_window_minutes": 15,
+                    "require_break_glass_justification": False,
+                },
+                "medication_safety": {
+                    "dual_signoff_required": True,
+                    "verbal_order_timeout_minutes": 60,
+                },
             }
 
     # ── Computed Properties ──────────────────────────────
@@ -615,7 +639,7 @@ class EnvironmentState:
         crisis_vec[6] = min(self.step_count, 500) / 500.0
         crisis_vec[7] = len(self.pending_patients) / max(self.crisis.patient_count, 1)
         crisis_vec[8] = float(self.violations_injected > 0)
-        crisis_vec[9] = 0.0  # drift_active placeholder
+        crisis_vec[9] = float(bool(self.drift_history))
 
         # Policy state: 20 features
         policy_vec = np.zeros(20, dtype=np.float32)
@@ -649,6 +673,9 @@ class EnvironmentState:
             "agent_states": {k.value: v.to_dict() for k, v in self.agent_states.items()},
             "active_policies": {k: v.to_dict() for k, v in self.active_policies.items()},
             "expert_signals": self.expert_signals,
+            "contract_constraints": self.contract_constraints,
+            "regulatory_constraints": self.regulatory_constraints,
+            "recent_drift_events": self.drift_history[-10:],
             "app_audit_log": [event.to_dict() for event in self.app_audit_log[-25:]],
             "override_tokens": [token.to_dict() for token in self.override_tokens.values() if token.active],
             "stats": {
@@ -666,6 +693,9 @@ class EnvironmentState:
 
     def add_app_audit(self, event: AppAuditEvent) -> None:
         self.app_audit_log.append(event)
+
+    def add_drift_event(self, event: dict[str, Any]) -> None:
+        self.drift_history.append(event)
 
     def issue_override_token(
         self,

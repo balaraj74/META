@@ -128,13 +128,23 @@ export interface BackendTrainingStatus {
 }
 
 export interface BackendComparisonMetrics {
+  // Per-episode arrays for the bar chart
+  baseline_rewards: number[];
+  trained_rewards: number[];
+  // Aggregate scalars
   baseline_mean_reward: number;
   trained_mean_reward: number;
-  reward_delta: number;
-  baseline_mean_survival: number;
-  trained_mean_survival: number;
-  survival_delta: number;
-  episode_counts: Record<string, number>;
+  improvement: number;
+  dpo_accuracy: number;
+  reward_margin: number;
+  step: number;
+  progress: number;
+  // Legacy fields kept for backward compat
+  reward_delta?: number;
+  baseline_mean_survival?: number;
+  trained_mean_survival?: number;
+  survival_delta?: number;
+  episode_counts?: Record<string, number>;
 }
 
 export interface BackendRewardCurve {

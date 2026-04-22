@@ -131,6 +131,9 @@ export interface TrainingStatus {
   gpuUtilization: number;
   baselineRewards: number[];
   trainedRewards: number[];
+  rewardMargin: number;
+  dpoAccuracy: number;
+  comparisonStep: number;
   nPreferencePairs: number;
   modelPushedToHub: boolean;
   hubUrl: string | null;

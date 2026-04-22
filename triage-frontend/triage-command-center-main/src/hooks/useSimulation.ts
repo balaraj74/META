@@ -211,6 +211,14 @@ export function useSimulation() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isLive) return;
+    if (ws.status !== "fallback" && ws.status !== "disconnected") return;
+    liveRef.current = false;
+    setIsLive(false);
+    stopSimulation().catch(() => {/* ignore */});
+  }, [isLive, ws.status]);
+
   // ── Mock simulation (runs only when NOT in live mode) ──────────────────────
   useEffect(() => {
     if (isLive || !isRunning) { clearMock(); return; }
@@ -300,6 +308,6 @@ export function useSimulation() {
     // Expose connection status for the navbar badge
     wsStatus: ws.status,
     wsLatency: ws.latencyMs,
-    isLive,
+    isLive: isLive && !ws.isMockMode,
   };
 }

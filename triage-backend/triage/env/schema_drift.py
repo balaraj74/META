@@ -27,6 +27,7 @@ class SchemaDrift:
         self.rng = random.Random(seed)
         self.changes: list[PolicyChange] = []
         self._drift_schedule: list[dict[str, Any]] = []
+        self.event_log: list[dict[str, Any]] = []
 
     def plan_drifts(self, episode_length: int, difficulty: float) -> None:
         """Pre-plan drift events for the episode.
@@ -35,6 +36,7 @@ class SchemaDrift:
         """
         self._drift_schedule.clear()
         self.changes.clear()
+        self.event_log.clear()
 
         # Number of drift events scales with difficulty
         num_drifts = max(1, int(difficulty * 5))
@@ -48,11 +50,11 @@ class SchemaDrift:
         )
 
         drift_types = [
-            "policy_update",
+            "policy_drift",
+            "contract_drift",
+            "regulatory_drift",
             "expert_signal_shift",
             "resource_shock",
-            "policy_addition",
-            "policy_removal",
         ]
 
         for step in drift_steps:
@@ -76,6 +78,8 @@ class SchemaDrift:
             drift["applied"] = True
             event = self._apply_single_drift(drift["type"], state)
             if event:
+                event["step"] = state.step_count
+                self.event_log.append(event)
                 applied_events.append(event)
 
         return applied_events
@@ -86,16 +90,25 @@ class SchemaDrift:
         state: EnvironmentState,
     ) -> dict[str, Any] | None:
         handlers = {
-            "policy_update": self._drift_policy_update,
+            "policy_drift": self._drift_policy_drift,
+            "contract_drift": self._drift_contract,
+            "regulatory_drift": self._drift_regulatory,
             "expert_signal_shift": self._drift_expert_signal,
             "resource_shock": self._drift_resource_shock,
-            "policy_addition": self._drift_policy_addition,
-            "policy_removal": self._drift_policy_removal,
         }
         handler = handlers.get(drift_type)
         if handler:
             return handler(state)
         return None
+
+    def _drift_policy_drift(self, state: EnvironmentState) -> dict[str, Any]:
+        handler = self.rng.choice(
+            [self._drift_policy_update, self._drift_policy_addition, self._drift_policy_removal]
+        )
+        event = handler(state)
+        event["type"] = "policy_drift"
+        event["domain"] = "policy"
+        return event
 
     def _drift_policy_update(self, state: EnvironmentState) -> dict[str, Any]:
         """Modify an existing policy rule."""
@@ -158,7 +171,9 @@ class SchemaDrift:
         self.changes.append(change)
 
         return {
-            "type": "policy_update",
+            "type": "policy_drift",
+            "change_type": "modified",
+            "domain": "policy",
             "policy_id": policy_id,
             "policy_name": policy.name,
             "old_rule": old_rule,
@@ -243,6 +258,7 @@ class SchemaDrift:
 
         return {
             "type": "resource_shock",
+            "domain": "operations",
             "resource": attr,
             "delta": shock["delta"],
             "description": shock["description"],
@@ -299,14 +315,21 @@ class SchemaDrift:
             )
             self.changes.append(change)
             return {
-                "type": "policy_addition",
+                "type": "policy_drift",
+                "change_type": "added",
+                "domain": "policy",
                 "policy_id": new_policy.id,
                 "policy_name": new_policy.name,
                 "rules": new_policy.rules,
                 "message": f"📋 NEW POLICY: {new_policy.name} now in effect",
             }
 
-        return {"type": "policy_addition", "status": "policy_already_exists"}
+        return {
+            "type": "policy_drift",
+            "change_type": "added",
+            "domain": "policy",
+            "status": "policy_already_exists",
+        }
 
     def _drift_policy_removal(self, state: EnvironmentState) -> dict[str, Any]:
         """Deactivate a policy (e.g., crisis override)."""
@@ -331,20 +354,102 @@ class SchemaDrift:
         self.changes.append(change)
 
         return {
-            "type": "policy_removal",
+            "type": "policy_drift",
+            "change_type": "removed",
+            "domain": "policy",
             "policy_id": pid,
             "policy_name": policy.name,
             "message": f"❌ POLICY SUSPENDED: {policy.name} — crisis override in effect",
         }
 
-    def get_all_changes(self) -> list[dict[str, Any]]:
-        return [
+    def _drift_contract(self, state: EnvironmentState) -> dict[str, Any]:
+        portal = state.contract_constraints.setdefault(
+            "insurance_portal",
             {
-                "policy_id": c.policy_id,
-                "change_type": c.change_type,
-                "old_value": c.old_value,
-                "new_value": c.new_value,
-                "episode": c.episode,
-            }
-            for c in self.changes
+                "schema_version": "v1",
+                "member_id_field": "member_id",
+                "coverage_field": "coverage_percent",
+                "authorization_mode": "waived_for_emergency",
+                "requires_portal_reference": False,
+            },
+        )
+        mutations = [
+            {
+                "schema_version": "v2",
+                "member_id_field": "subscriber_id",
+                "coverage_field": "benefit_level",
+                "authorization_mode": "portal_ref_required",
+                "requires_portal_reference": True,
+                "message": "🔁 CONTRACT DRIFT: Insurance portal v2 renamed coverage and member fields",
+            },
+            {
+                "schema_version": "v3",
+                "member_id_field": "member_number",
+                "coverage_field": "coverage_percent",
+                "authorization_mode": "case_manager_review",
+                "requires_portal_reference": True,
+                "message": "🔁 CONTRACT DRIFT: Pre-auth now requires case-manager review outside life-saving emergencies",
+            },
+            {
+                "schema_version": "v2.1",
+                "member_id_field": "member_id",
+                "coverage_field": "eligible_percent",
+                "authorization_mode": "waived_for_emergency",
+                "requires_portal_reference": False,
+                "message": "🔁 CONTRACT DRIFT: Eligibility payload changed from coverage_percent to eligible_percent",
+            },
         ]
+        previous = dict(portal)
+        mutation = self.rng.choice(mutations)
+        portal.update({key: value for key, value in mutation.items() if key != "message"})
+        return {
+            "type": "contract_drift",
+            "domain": "contract",
+            "system": "insurance_portal",
+            "old_contract": previous,
+            "new_contract": dict(portal),
+            "message": mutation["message"],
+        }
+
+    def _drift_regulatory(self, state: EnvironmentState) -> dict[str, Any]:
+        scenarios = [
+            {
+                "area": "hipaa",
+                "updates": {
+                    "max_access_window_minutes": 5,
+                    "require_break_glass_justification": True,
+                },
+                "message": "⚖️ REGULATORY DRIFT: Break-glass justification is now mandatory for emergency chart access",
+            },
+            {
+                "area": "medication_safety",
+                "updates": {
+                    "dual_signoff_required": True,
+                    "verbal_order_timeout_minutes": 15,
+                },
+                "message": "⚖️ REGULATORY DRIFT: Verbal medication orders must be reconciled within 15 minutes",
+            },
+            {
+                "area": "patient_consent",
+                "updates": {
+                    "consent_required_for_non_emergency_transfer": True,
+                    "audit_export_within_minutes": 30,
+                },
+                "message": "⚖️ REGULATORY DRIFT: Non-emergency transfers now require consent capture plus audit export",
+            },
+        ]
+        mutation = self.rng.choice(scenarios)
+        area = mutation["area"]
+        current = dict(state.regulatory_constraints.get(area, {}))
+        state.regulatory_constraints.setdefault(area, {}).update(mutation["updates"])
+        return {
+            "type": "regulatory_drift",
+            "domain": "regulatory",
+            "area": area,
+            "old_requirements": current,
+            "new_requirements": dict(state.regulatory_constraints[area]),
+            "message": mutation["message"],
+        }
+
+    def get_all_changes(self) -> list[dict[str, Any]]:
+        return list(self.event_log)

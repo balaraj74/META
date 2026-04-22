@@ -62,7 +62,7 @@ export function useTrainingStatus(): TrainingStatus {
       try {
         const res = await getTrainingStatus();
         if (!res.success || !res.data) return;
-        const d = res.data as Record<string, unknown>;
+        const d = res.data as unknown as Record<string, unknown>;
         const comparison = await getComparisonMetrics().catch(() => null);
         const metrics = (d.metrics ?? {}) as Record<string, unknown>;
 
@@ -105,8 +105,11 @@ export function useTrainingStatus(): TrainingStatus {
             lossSteps,
             etaMinutes:       etaMins,
             gpuUtilization:   gpuPct,
-            baselineRewards:  [42, 44, 41, 45, 43, 46, 44, 45, 43, 47],
-            trainedRewards:   [45, 52, 58, 63, 69, 74, 78, 82, 85, 87],
+            baselineRewards:  comparison?.data?.baseline_rewards ?? [42, 44, 41, 45, 43, 46, 44, 45, 43, 47],
+            trainedRewards:   comparison?.data?.trained_rewards  ?? [45, 52, 58, 63, 69, 74, 78, 82, 85, 87],
+            rewardMargin:     comparison?.data?.reward_margin    ?? 0,
+            dpoAccuracy:      comparison?.data?.dpo_accuracy      ?? 0,
+            comparisonStep:   comparison?.data?.step              ?? step,
             nPreferencePairs: trainSamples,
             modelPushedToHub: phase === "complete",
             hubUrl:           phase === "complete" ? "https://huggingface.co/error404/triage-cmo" : null,
@@ -145,6 +148,9 @@ export function useTrainingStatus(): TrainingStatus {
           gpuUtilization:   Number(training.gpu  ?? 0),
           baselineRewards,
           trainedRewards,
+          rewardMargin:     comparison?.data?.reward_margin    ?? 0,
+          dpoAccuracy:      comparison?.data?.dpo_accuracy      ?? 0,
+          comparisonStep:   comparison?.data?.step              ?? curStep,
           nPreferencePairs: Number(labeling.mixed_pairs ?? labeling.pairs ?? training.dataset_size ?? 0),
           modelPushedToHub: Boolean(training.model_pushed_to_hub),
           hubUrl:           typeof training.hub_url === "string" ? training.hub_url : null,

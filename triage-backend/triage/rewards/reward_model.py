@@ -111,7 +111,8 @@ class RewardModel:
         app_audits: list[Any] | None = None,
     ) -> RewardBreakdown:
         """Compute the full reward breakdown for the current step."""
-        breakdown = RewardBreakdown(weights=dict(self.weights))
+        effective_weights = self._effective_weights(state)
+        breakdown = RewardBreakdown(weights=dict(effective_weights))
         drift_events = drift_events or []
         messages = messages or state.message_history
         app_audits = app_audits or state.app_audit_log
@@ -130,13 +131,13 @@ class RewardModel:
         breakdown.terminal_bonus = self._terminal_bonus(state)
 
         weighted_base = (
-            self.weights["survival"] * breakdown.survival
-            + self.weights["compliance"] * breakdown.compliance
-            + self.weights["coordination"] * breakdown.coordination
-            + self.weights["oversight"] * breakdown.oversight
-            + self.weights["depth"] * breakdown.depth
-            + self.weights["adaptation"] * breakdown.adaptation
-            + self.weights["expert_alignment"] * breakdown.expert_alignment
+            effective_weights["survival"] * breakdown.survival
+            + effective_weights["compliance"] * breakdown.compliance
+            + effective_weights["coordination"] * breakdown.coordination
+            + effective_weights["oversight"] * breakdown.oversight
+            + effective_weights["depth"] * breakdown.depth
+            + effective_weights["adaptation"] * breakdown.adaptation
+            + effective_weights["expert_alignment"] * breakdown.expert_alignment
         )
         breakdown.total = (
             weighted_base
@@ -153,6 +154,11 @@ class RewardModel:
                 "injected": state.violations_injected,
             },
             "drift_events": len(drift_events),
+            "drift_types": [event.get("type", "unknown") for event in drift_events],
+            "expert_profile": {
+                "dominant_signal": self._dominant_signal(state),
+                "signals": {k: round(v, 3) for k, v in state.expert_signals.items()},
+            },
             "workflow": {
                 "penalties": penalty_details,
                 "recent_audits": [self._audit_to_dict(event) for event in app_audits[-5:]],
@@ -164,6 +170,31 @@ class RewardModel:
             },
         }
         return breakdown
+
+    def _effective_weights(self, state: EnvironmentState) -> dict[str, float]:
+        weights = dict(self.weights)
+        signals = state.expert_signals or {}
+        cost = signals.get("cost_weight", 0.3)
+        quality = signals.get("quality_weight", 0.5)
+        speed = signals.get("speed_weight", 0.2)
+
+        weights["survival"] *= 1.0 + quality * 0.65
+        weights["compliance"] *= 1.0 + quality * 0.25
+        weights["oversight"] *= 1.0 + quality * 0.25
+        weights["coordination"] *= 1.0 + speed * 0.55
+        weights["adaptation"] *= 1.0 + speed * 0.35
+        weights["depth"] *= max(0.35, 1.0 + quality * 0.15 - cost * 0.55)
+        weights["expert_alignment"] *= 1.0 + max(cost, quality, speed) * 0.5
+
+        total = sum(weights.values()) or 1.0
+        return {name: value / total for name, value in weights.items()}
+
+    def _dominant_signal(self, state: EnvironmentState) -> str:
+        signals = state.expert_signals or {}
+        if not signals:
+            return "quality"
+        dominant = max(signals, key=signals.get)
+        return dominant.replace("_weight", "")
 
     def compute_episode_reward(
         self,

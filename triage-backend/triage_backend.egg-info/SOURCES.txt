@@ -2,7 +2,9 @@ pyproject.toml
 config/__init__.py
 config/settings.py
 scripts/__init__.py
+scripts/benchmark_agent.py
 scripts/colab_dpo_builder.py
+scripts/colab_train_dpo.py
 scripts/collect_episodes.py
 scripts/convert_healthcare.py
 scripts/demo.py
@@ -12,7 +14,10 @@ scripts/fetch_hf_dataset.py
 scripts/generate_baseline.py
 scripts/generate_dpo_dataset_ollama.py
 scripts/generate_dpo_fast.py
+scripts/generate_hf_dpo.py
+scripts/generate_notebook.py
 scripts/generate_training_report.py
+scripts/merge_and_push_hf.py
 scripts/merge_and_test.py
 scripts/run_episode.py
 scripts/run_simulation.py

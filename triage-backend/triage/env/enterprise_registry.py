@@ -12,7 +12,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from triage.env.enterprise_apps.hris import HRISSystem
 from triage.env.enterprise_apps.icu_manager import ICUManagerSystem
+from triage.env.enterprise_apps.insurance import InsurancePortalSystem
+from triage.env.enterprise_apps.it_systems import ITTrackerSystem
 from triage.env.enterprise_apps.pharmacy import PharmacySystem
 from triage.env.state import AgentType, EnvironmentState, Patient, PatientStatus, WardType
 
@@ -289,9 +292,11 @@ class EnterpriseAppRegistry:
     def __init__(self) -> None:
         self.ehr = EHRSystem()
         self.pharmacy = PharmacySystem()
-        self.scheduling = SchedulingSystem()
-        self.insurance = InsuranceVerifier()
-        self.equipment = EquipmentTracker()
+        self.hris = HRISSystem()
+        self.scheduling = self.hris
+        self.insurance = InsurancePortalSystem()
+        self.it_tracker = ITTrackerSystem()
+        self.equipment = self.it_tracker
         self.icu_manager = ICUManagerSystem()
 
     def reset(self) -> None:
@@ -325,14 +330,29 @@ class EnterpriseAppRegistry:
                 state,
                 requester,
             ),
-            "get_roster": lambda: self.scheduling.get_roster(state),
-            "check_staff_fatigue": lambda: self.scheduling.check_staff_fatigue(params["role"], params.get("hours_worked", 0)),
-            "request_staff": lambda: self.scheduling.request_additional_staff(params["role"], params.get("count", 1), state),
-            "verify_insurance": lambda: self.insurance.verify_patient(params["patient_id"], state),
-            "check_authorization": lambda: self.insurance.check_authorization(params["patient_id"], params.get("procedure", "emergency")),
-            "get_equipment_status": lambda: self.equipment.get_status(state),
-            "allocate_ventilator": lambda: self.equipment.allocate_ventilator(params["patient_id"], state),
-            "release_equipment": lambda: self.equipment.release_equipment(params["equipment_id"], state),
+            "get_roster": lambda: self.hris.get_roster(state, requester),
+            "check_staff_fatigue": lambda: self.hris.check_staff_fatigue(
+                params["role"],
+                params.get("hours_worked", 0),
+                state,
+                requester,
+            ),
+            "request_staff": lambda: self.hris.request_additional_staff(
+                params["role"],
+                params.get("count", 1),
+                state,
+                requester,
+            ),
+            "verify_insurance": lambda: self.insurance.verify_patient(params["patient_id"], state, requester),
+            "check_authorization": lambda: self.insurance.check_authorization(
+                params["patient_id"],
+                params.get("procedure", "emergency"),
+                state,
+                requester,
+            ),
+            "get_equipment_status": lambda: self.it_tracker.get_status(state, requester),
+            "allocate_ventilator": lambda: self.it_tracker.allocate_ventilator(params["patient_id"], state, requester),
+            "release_equipment": lambda: self.it_tracker.release_equipment(params["equipment_id"], state, requester),
             "query_icu_capacity": lambda: self.icu_manager.query_capacity(state, requester, params.get("patient_id")),
             "allocate_icu_bed": lambda: self.icu_manager.allocate_bed(
                 params["patient_id"],

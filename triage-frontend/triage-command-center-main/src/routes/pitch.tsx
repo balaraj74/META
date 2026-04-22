@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from "react";
 import { motion, useMotionValue, useTransform, animate } from "framer-motion";
 import { useSimulation } from "@/hooks/useSimulation";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Maximize2, Minimize2 } from "lucide-react";
 
 export const Route = createFileRoute("/pitch")({
   head: () => ({
@@ -41,6 +41,18 @@ function PitchMode() {
   const [tick, setTick] = useState(0);
   const [paused, setPaused] = useState(false);
   const [eventIdx, setEventIdx] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  async function toggleFullscreen() {
+    const node = containerRef.current;
+    if (!node) return;
+    if (document.fullscreenElement) {
+      await document.exitFullscreen?.().catch(() => {});
+      return;
+    }
+    await node.requestFullscreen?.().catch(() => {});
+  }
 
   // Time advance
   useEffect(() => {
@@ -75,6 +87,9 @@ function PitchMode() {
         setTick(0);
         setEventIdx(0);
       }
+      if (e.key === "f" || e.key === "F") {
+        void toggleFullscreen();
+      }
       if (e.key === "Escape") {
         document.exitFullscreen?.().catch(() => {});
       }
@@ -83,12 +98,20 @@ function PitchMode() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  useEffect(() => {
+    function onFullscreenChange() {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
   const survival = 61 + Math.min(32, (target / 87) * 32);
   const compliance = 70 + Math.min(20, (target / 87) * 20);
   const oversight = 55 + Math.min(40, (target / 87) * 40);
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-background text-text-primary">
+    <div ref={containerRef} className="fixed inset-0 flex flex-col bg-background text-text-primary">
       {/* Top crisis bar */}
       <div
         className="flex items-center justify-between border-b border-border bg-surface px-8 py-4"
@@ -104,6 +127,14 @@ function PitchMode() {
           {cur.episodeBadge}
         </div>
         <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => void toggleFullscreen()}
+            className="inline-flex items-center gap-2 border border-border px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider text-text-secondary hover:text-text-primary"
+          >
+            {isFullscreen ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
+            {isFullscreen ? "Windowed" : "Fullscreen"}
+          </button>
           <Link
             to="/dashboard"
             className="inline-flex items-center gap-1 font-mono text-[11px] uppercase tracking-wider text-text-muted hover:text-text-primary"
@@ -153,7 +184,7 @@ function PitchMode() {
             </div>
           </div>
           <div className="text-right font-mono text-[10px] uppercase tracking-widest text-text-muted">
-            <div>[SPACE Pause] [→ Next] [R Reset] [ESC Exit]</div>
+            <div>[SPACE Pause] [→ Next] [R Reset] [F Fullscreen] [ESC Exit]</div>
             <div className="mt-1 text-text-secondary">
               {paused ? "PAUSED" : `Tick ${tick}s · Event ${eventIdx + 1}/${PITCH_SCRIPT.length}`}
             </div>

@@ -260,6 +260,8 @@ class HospitalEnv:
         # Apply schema drifts
         drift_events = self._schema_drift.apply_drifts(self._state)
         self._drift_events.extend(drift_events)
+        for event in drift_events:
+            self._state.add_drift_event(event)
 
         # Inject violations periodically
         if self._state.step_count % 10 == 0 and self.difficulty > 0.3:

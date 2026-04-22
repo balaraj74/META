@@ -19,12 +19,21 @@ class AdaptationReward:
                 ActionType.FLAG_POLICY_VIOLATION,
                 ActionType.UPDATE_EHR,
                 ActionType.ACTIVATE_PROTOCOL,
+                ActionType.VERIFY_INSURANCE,
             )
         ]
         drift_messages = [
             message
             for message in state.message_history
-            if "policy" in message.content.lower() or "protocol" in message.content.lower()
+            if any(
+                keyword in message.content.lower()
+                for keyword in ("policy", "protocol", "contract", "schema", "regulatory", "compliance")
+            )
         ]
-        score = min((len(drift_related_actions) + len(drift_messages)) / max(len(drift_events) * 2, 1), 1.0)
+        domain_coverage = len({event.get("type", "unknown") for event in drift_events})
+        score = min(
+            (len(drift_related_actions) + len(drift_messages) + domain_coverage)
+            / max(len(drift_events) * 2, 1),
+            1.0,
+        )
         return max(-1.0, min(1.0, score))

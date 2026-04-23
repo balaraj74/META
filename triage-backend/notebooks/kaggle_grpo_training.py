@@ -320,7 +320,7 @@ def load_model():
         trust_remote_code=True,
         attn_implementation="eager",  # P100 safe — no flash attention
         token=hf_token,
-        torch_dtype=torch.float16,    # Force FP16 instead of native BF16
+        dtype=torch.float16,          # Use dtype= (torch_dtype is deprecated)
     )
     model = prepare_model_for_kbit_training(model)
 
@@ -333,6 +333,11 @@ def load_model():
         task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, lora_config)
+    # Cast LoRA trainable params to float32 so the AMP scaler never
+    # encounters BFloat16 tensors (which cause NotImplementedError on P100/T4)
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            param.data = param.data.to(torch.float32)
     model.print_trainable_parameters()
     logger.info("Model loaded with LoRA.")
     return model, tokenizer
@@ -360,8 +365,9 @@ def train():
         logging_steps=10,
         save_steps=200,
         save_total_limit=2,
-        bf16=False,  # P100 doesn't support bf16
-        fp16=True,
+        bf16=False,   # P100/T4: no bf16 hardware support
+        fp16=False,   # Disable AMP scaler — avoids BFloat16 unscale crash;
+                      # LoRA params are cast to float32, base stays 4-bit int.
         warmup_ratio=0.1,
         lr_scheduler_type="cosine",
         report_to="none",

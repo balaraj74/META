@@ -24,15 +24,15 @@ MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3.5-4B")
 MODEL_ALIASES = {
     "Qwen/Qwen3.5-4B-Instruct": "Qwen/Qwen3.5-4B",
 }
-MAX_SEQ_LENGTH = 512
+MAX_SEQ_LENGTH = 256   # Shorter = faster generation per step
 LOAD_IN_4BIT = True
 LORA_R = 16
 LORA_ALPHA = 16
 LORA_TARGETS = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
-NUM_PROMPTS = 2000
-NUM_EPOCHS = 3
-BATCH = 2
-GRAD_ACCUM = 4
+NUM_PROMPTS = 300      # Was 2000 — 300 is enough for one strong training run
+NUM_EPOCHS = 1         # Was 3 — 1 epoch on 300 prompts finishes in ~3-4h on T4
+BATCH = 1             # Was 2 — smaller batch prevents OOM and is more stable
+GRAD_ACCUM = 8        # Was 4 — compensates for smaller batch (effective batch=8)
 LR = 5e-5
 OUTPUT_DIR = "/kaggle/working/triage_grpo_output"
 
@@ -361,7 +361,7 @@ def train():
         gradient_accumulation_steps=GRAD_ACCUM,
         learning_rate=LR,
         max_completion_length=MAX_SEQ_LENGTH,
-        num_generations=4,
+        num_generations=2,  # Was 4 — halves GPU time per step
         logging_steps=10,
         save_steps=200,
         save_total_limit=2,

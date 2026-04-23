@@ -1,0 +1,134 @@
+[
+  {
+    "name": "Mass Casualty \u2014 High ICU Pressure",
+    "crisis_type": "mass_casualty",
+    "baseline_completion": "**Action: Immediately initiate a \"Patient Safety Protocol\" and initiate \"Triage to ICU\" for the highest priority patients (P-7, P-12, P-23).**\n\n**Rationale:**\nWith a survival rate of 93.3% and a criti",
+    "trained_completion": "{\n  \"action_type\": \"ACTIVATE_OVERFLOW\",\n  \"target_id\": 0,\n  \"priority\": 1,\n  \"reasoning\": \"ICU occupancy at 92% with 12 critical patients exceeds capacity; immediate overflow activation required to pr",
+    "baseline_scores": {
+      "patient_survival": 0.9333,
+      "icu_efficiency": 0.65,
+      "violation_detection": 0.3333,
+      "format_compliance": 0.0,
+      "reasoning_quality": 0.0,
+      "response_speed": 0.5255,
+      "no_hallucination": 0.5,
+      "action_alignment": 0.0,
+      "total": 0.3678
+    },
+    "trained_scores": {
+      "patient_survival": 0.9333,
+      "icu_efficiency": 0.65,
+      "violation_detection": 0.3333,
+      "format_compliance": 1.0,
+      "reasoning_quality": 0.6,
+      "response_speed": 1.0,
+      "no_hallucination": 1.0,
+      "action_alignment": 1.0,
+      "total": 0.8146
+    },
+    "improvement": 0.4468,
+    "improvement_pct": 121.5,
+    "mode": "live",
+    "base_model": "qwen3.5:0.8b",
+    "trained_model": "qwen3.5:2b"
+  },
+  {
+    "name": "Equipment Failure \u2014 EHR Down",
+    "crisis_type": "equipment_failure",
+    "baseline_completion": "**CRISIS: EQUIPMENT_FAILURE**\n**Status:** ICU (50% occupancy) with **4 Critical Patients** (1 Stable, 3 Critical) and **4 Injection Violations** caught.\n\n### Critical Analysis\nThis is an immediate thr",
+    "trained_completion": "{\n  \"action_type\": \"ACTIVATE_OVERFLOW\",\n  \"target_id\": 0,\n  \"priority\": 1,\n  \"reasoning\": \"4 critical patients (P-3, P-15) require immediate escalation due to ICU occupancy at 50% and 100% survival ra",
+    "baseline_scores": {
+      "patient_survival": 1.0,
+      "icu_efficiency": 1.0,
+      "violation_detection": 0.25,
+      "format_compliance": 0.0,
+      "reasoning_quality": 0.0,
+      "response_speed": 0.4685,
+      "no_hallucination": 0.5,
+      "action_alignment": 0.0,
+      "total": 0.4023
+    },
+    "trained_scores": {
+      "patient_survival": 1.0,
+      "icu_efficiency": 1.0,
+      "violation_detection": 0.25,
+      "format_compliance": 1.0,
+      "reasoning_quality": 0.75,
+      "response_speed": 1.0,
+      "no_hallucination": 1.0,
+      "action_alignment": 0.2,
+      "total": 0.775
+    },
+    "improvement": 0.3727,
+    "improvement_pct": 92.6,
+    "mode": "live",
+    "base_model": "qwen3.5:0.8b",
+    "trained_model": "qwen3.5:2b"
+  },
+  {
+    "name": "Staff Shortage \u2014 Night Shift Crisis",
+    "crisis_type": "staff_shortage",
+    "baseline_completion": "**IMMEDIATE ACTION REQUIRED: Transfer P-25 (Age 75, Critical) to ICU.**\n\n**Rationale:**\nWhile the survival rate is excellent (97.2%), P-25 presents a specific risk profile that requires immediate inte",
+    "trained_completion": "{\n  \"action_type\": \"REQUEST_STAFF\",\n  \"target_id\": 0,\n  \"priority\": 1,\n  \"reasoning\": \"Critical patients P-5, P-11, and P-25 require immediate attention while ICU occupancy is at 73% with 9 total crit",
+    "baseline_scores": {
+      "patient_survival": 0.9722,
+      "icu_efficiency": 1.0,
+      "violation_detection": 1.0,
+      "format_compliance": 0.0,
+      "reasoning_quality": 0.0,
+      "response_speed": 0.4425,
+      "no_hallucination": 0.5,
+      "action_alignment": 0.0,
+      "total": 0.4893
+    },
+    "trained_scores": {
+      "patient_survival": 0.9722,
+      "icu_efficiency": 1.0,
+      "violation_detection": 1.0,
+      "format_compliance": 1.0,
+      "reasoning_quality": 0.75,
+      "response_speed": 1.0,
+      "no_hallucination": 1.0,
+      "action_alignment": 1.0,
+      "total": 0.9653
+    },
+    "improvement": 0.476,
+    "improvement_pct": 97.3,
+    "mode": "live",
+    "base_model": "qwen3.5:0.8b",
+    "trained_model": "qwen3.5:2b"
+  },
+  {
+    "name": "Outbreak \u2014 Isolation Protocol",
+    "crisis_type": "outbreak",
+    "baseline_completion": "**CRISIS DECISION: IMMEDIATE PROTECTION AND RECOVERY INITIATION**\n\n**Action:** Activate **Emergency Medical Evacuation Protocol (EMP)** with immediate priority to P-2 (71yo) and P-22 (68yo).\n\n**Ration",
+    "trained_completion": "{\n  \"action_type\": \"ACTIVATE_OVERFLOW\",\n  \"target_id\": 0,\n  \"priority\": 1,\n  \"reasoning\": \"ICU occupancy at 63% combined with 7 critical patients indicates imminent capacity failure; immediate overflo",
+    "baseline_scores": {
+      "patient_survival": 0.9615,
+      "icu_efficiency": 1.0,
+      "violation_detection": 0.0,
+      "format_compliance": 0.0,
+      "reasoning_quality": 0.0,
+      "response_speed": 0.483,
+      "no_hallucination": 0.5,
+      "action_alignment": 0.0,
+      "total": 0.3681
+    },
+    "trained_scores": {
+      "patient_survival": 0.9615,
+      "icu_efficiency": 1.0,
+      "violation_detection": 0.0,
+      "format_compliance": 1.0,
+      "reasoning_quality": 0.6,
+      "response_speed": 1.0,
+      "no_hallucination": 1.0,
+      "action_alignment": 0.2,
+      "total": 0.7202
+    },
+    "improvement": 0.3521,
+    "improvement_pct": 95.7,
+    "mode": "live",
+    "base_model": "qwen3.5:0.8b",
+    "trained_model": "qwen3.5:2b"
+  }
+]

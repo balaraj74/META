@@ -11,8 +11,10 @@ from triage.api.middleware.cors import add_cors_middleware
 from triage.api.middleware.logging import add_logging_middleware
 from triage.api.routers import (
     agents_router,
+    command_router,
     episodes_router,
     metrics_router,
+    openenv_router,
     patients_router,
     training_router,
     websocket_router,
@@ -47,6 +49,8 @@ def create_app() -> FastAPI:
     app.include_router(metrics_router, prefix="/api/metrics", tags=["Metrics"])
     app.include_router(training_router, prefix="/api/training", tags=["Training"])
     app.include_router(websocket_router, prefix="/ws", tags=["WebSocket"])
+    app.include_router(command_router, tags=["Command Center"])
+    app.include_router(openenv_router, tags=["OpenEnv"])
 
     @app.get("/api/health", response_model=HealthResponse)
     async def health() -> HealthResponse:

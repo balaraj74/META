@@ -1,0 +1,134 @@
+[
+  {
+    "name": "Mass Casualty \u2014 High ICU Pressure",
+    "crisis_type": "mass_casualty",
+    "baseline_completion": "**Immediate Action Required: Stabilize the P-12 and P-23 patients immediately.**\n\n**Rationale:**\nIn this scenario, the survival rate (93.3%) is at its lowest point (below the 95% threshold), and the I",
+    "trained_completion": "{\n  \"action_type\": \"TRIAGE_PATIENT\",\n  \"target_id\": 7,\n  \"priority\": 1,\n  \"reasoning\": \"Patient P-7 is a critical patient with 92% ICU occupancy, placing them at the highest priority level. Given the ",
+    "baseline_scores": {
+      "patient_survival": 0.9333,
+      "icu_efficiency": 0.65,
+      "violation_detection": 0.3333,
+      "format_compliance": 0.0,
+      "reasoning_quality": 0.0,
+      "response_speed": 0.53,
+      "no_hallucination": 0.5,
+      "action_alignment": 0.0,
+      "total": 0.3683
+    },
+    "trained_scores": {
+      "patient_survival": 0.9333,
+      "icu_efficiency": 0.65,
+      "violation_detection": 0.3333,
+      "format_compliance": 0.0,
+      "reasoning_quality": 0.0,
+      "response_speed": 1.0,
+      "no_hallucination": 0.5,
+      "action_alignment": 0.0,
+      "total": 0.4271
+    },
+    "improvement": 0.0588,
+    "improvement_pct": 16.0,
+    "mode": "live",
+    "base_model": "qwen3.5:0.8b",
+    "trained_model": "qwen3.5:0.8b"
+  },
+  {
+    "name": "Equipment Failure \u2014 EHR Down",
+    "crisis_type": "equipment_failure",
+    "baseline_completion": "**CRISIS: EQUIPMENT_FAILURE (Critical)**\n\n**Action:** **IMMEDIATELY INITIATE AN AUTOMATED EMERGENCY MEDICAL CALL TO 911**\n\n**Rationale:**\n1.  **System Failure Impact:** With **100.0% Survival Rate**, ",
+    "trained_completion": "{\n  \"action_type\": \"TRIAGE_PATIENT\",\n  \"target_id\": 15,\n  \"priority\": 1,\n  \"reasoning\": \"Patient P-15 (age 80) is a critical patient with 100% survival rate, making them the highest priority for immed",
+    "baseline_scores": {
+      "patient_survival": 1.0,
+      "icu_efficiency": 1.0,
+      "violation_detection": 0.25,
+      "format_compliance": 0.0,
+      "reasoning_quality": 0.0,
+      "response_speed": 0.4915,
+      "no_hallucination": 0.5,
+      "action_alignment": 0.0,
+      "total": 0.4052
+    },
+    "trained_scores": {
+      "patient_survival": 1.0,
+      "icu_efficiency": 1.0,
+      "violation_detection": 0.25,
+      "format_compliance": 0.0,
+      "reasoning_quality": 0.0,
+      "response_speed": 1.0,
+      "no_hallucination": 0.5,
+      "action_alignment": 0.0,
+      "total": 0.4688
+    },
+    "improvement": 0.0636,
+    "improvement_pct": 15.7,
+    "mode": "live",
+    "base_model": "qwen3.5:0.8b",
+    "trained_model": "qwen3.5:0.8b"
+  },
+  {
+    "name": "Staff Shortage \u2014 Night Shift Crisis",
+    "crisis_type": "staff_shortage",
+    "baseline_completion": "**Immediate Crisis Assessment & Decision**\n\nBased on the data provided, this is a **critical, life-threatening situation** requiring immediate and decisive action to prevent death or severe morbidity.",
+    "trained_completion": "{\n  \"action_type\": \"TRIAGE_PATIENT\",\n  \"target_id\": 5,\n  \"priority\": 1,\n  \"reasoning\": \"Patient P-5 is a critical patient with a 97.2% survival rate, making them the highest priority for immediate sta",
+    "baseline_scores": {
+      "patient_survival": 0.9722,
+      "icu_efficiency": 1.0,
+      "violation_detection": 1.0,
+      "format_compliance": 0.0,
+      "reasoning_quality": 0.0,
+      "response_speed": 0.4455,
+      "no_hallucination": 0.5,
+      "action_alignment": 0.0,
+      "total": 0.4897
+    },
+    "trained_scores": {
+      "patient_survival": 0.9722,
+      "icu_efficiency": 1.0,
+      "violation_detection": 1.0,
+      "format_compliance": 1.0,
+      "reasoning_quality": 0.6,
+      "response_speed": 1.0,
+      "no_hallucination": 1.0,
+      "action_alignment": 1.0,
+      "total": 0.9465
+    },
+    "improvement": 0.4568,
+    "improvement_pct": 93.3,
+    "mode": "live",
+    "base_model": "qwen3.5:0.8b",
+    "trained_model": "qwen3.5:0.8b"
+  },
+  {
+    "name": "Outbreak \u2014 Isolation Protocol",
+    "crisis_type": "outbreak",
+    "baseline_completion": "**CRISIS DECISION: IMMEDIATE RELEASED RESURRECTION AND REASSIGNMENT (P-2 AND P-9)**\n\n**Rationale:**\nWith a **63% ICU occupancy rate** and only **7 critically ill patients** out of a total of 85, we ar",
+    "trained_completion": "{\n  \"action_type\": \"TRIAGE_PATIENT\",\n  \"target_id\": 2,\n  \"priority\": 1,\n  \"reasoning\": \"Patient P-2 is a critical patient with a 71-year-old age and status=CRITICAL, making them the highest priority f",
+    "baseline_scores": {
+      "patient_survival": 0.9615,
+      "icu_efficiency": 1.0,
+      "violation_detection": 0.0,
+      "format_compliance": 0.0,
+      "reasoning_quality": 0.0,
+      "response_speed": 0.5205,
+      "no_hallucination": 0.5,
+      "action_alignment": 0.0,
+      "total": 0.3728
+    },
+    "trained_scores": {
+      "patient_survival": 0.9615,
+      "icu_efficiency": 1.0,
+      "violation_detection": 0.0,
+      "format_compliance": 0.0,
+      "reasoning_quality": 0.0,
+      "response_speed": 1.0,
+      "no_hallucination": 0.5,
+      "action_alignment": 0.0,
+      "total": 0.4327
+    },
+    "improvement": 0.0599,
+    "improvement_pct": 16.1,
+    "mode": "live",
+    "base_model": "qwen3.5:0.8b",
+    "trained_model": "qwen3.5:0.8b"
+  }
+]

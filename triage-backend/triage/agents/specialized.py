@@ -472,8 +472,8 @@ class HRRosteringAgent(BaseAgent):
             except RuntimeError:
                 pass
 
-        # Flag potential fatigue violations (simulated check every 15 steps)
-        if state.step_count % 15 == 0 and state.step_count > 0:
+        # Flag potential fatigue violations (simulated check every 5 steps)
+        if state.step_count % 5 == 0:
             # Simulate detecting a fatigued staff member
             actions.append(AgentAction(
                 agent_type=self.agent_type,

@@ -19,7 +19,11 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger('triage_grpo')
 
-MODEL_NAME = "Qwen/Qwen3-2B"  # Latest Qwen3 model
+# Qwen3.5 public 4B repo is `Qwen/Qwen3.5-4B` (not `...-Instruct`).
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3.5-4B")
+MODEL_ALIASES = {
+    "Qwen/Qwen3.5-4B-Instruct": "Qwen/Qwen3.5-4B",
+}
 MAX_SEQ_LENGTH = 512
 LOAD_IN_4BIT = True
 LORA_R = 16
@@ -253,8 +257,45 @@ def reward_fn(completions, **kwargs):
 # Cell 6: Load model with standard transformers + peft
 # ═══════════════════════════════════════════════════════════════════════════════
 def load_model():
+    from huggingface_hub import HfApi
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+
+    def _resolve_model_name(name: str) -> str:
+        model_name = name.strip()
+        if model_name in MODEL_ALIASES:
+            mapped = MODEL_ALIASES[model_name]
+            logger.warning("Model '%s' not found as public repo. Using '%s'", model_name, mapped)
+            return mapped
+        return model_name
+
+    def _resolve_token() -> str | None:
+        token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_HUB_TOKEN")
+        return token.strip() if token and token.strip() else None
+
+    def _verify_access(model_name: str, token: str | None) -> str | bool:
+        api = HfApi()
+        if token:
+            try:
+                api.model_info(model_name, token=token)
+                return token
+            except Exception as exc:
+                logger.warning(
+                    "HF token auth failed (%s). Retrying anonymous access for public models.",
+                    exc.__class__.__name__,
+                )
+        try:
+            # Force anonymous access so stale/invalid local tokens do not cause 401 on public repos.
+            api.model_info(model_name, token=False)
+            return False
+        except Exception as exc:
+            raise RuntimeError(
+                f"Cannot access model '{model_name}'. Use a valid public model id and set a valid "
+                "Kaggle secret HF_TOKEN for gated/private repos."
+            ) from exc
+
+    model_name = _resolve_model_name(MODEL_NAME)
+    hf_token: str | bool = _verify_access(model_name, _resolve_token())
 
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
@@ -263,17 +304,22 @@ def load_model():
         bnb_4bit_use_double_quant=True,
     )
 
-    logger.info("Loading %s ...", MODEL_NAME)
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
+    logger.info("Loading %s ...", model_name)
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name,
+        trust_remote_code=True,
+        token=hf_token,
+    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     model = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME,
+        model_name,
         quantization_config=bnb_config,
         device_map="auto",
         trust_remote_code=True,
         attn_implementation="eager",  # P100 safe — no flash attention
+        token=hf_token,
     )
     model = prepare_model_for_kbit_training(model)
 

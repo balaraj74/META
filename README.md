@@ -647,7 +647,3 @@ pytest tests/ -v
 - `test_grand_finale.py` — Full end-to-end episode simulation
 
 ---
-
-## License
-
-MIT — Built for the Meta PyTorch OpenEnv Hackathon.

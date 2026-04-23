@@ -12,9 +12,25 @@ from triage.env.state import AgentType
 router = APIRouter()
 
 
+@router.get("/message-bus/stats", response_model=ApiResponse)
+async def get_message_bus_stats() -> ApiResponse:
+    return ApiResponse(success=True, data=backend_service.get_message_bus_stats())
+
+
 @router.get("/", response_model=ApiResponse)
 async def list_agents() -> ApiResponse:
     return ApiResponse(success=True, data={"agents": backend_service.get_agent_statuses()})
+
+
+@router.get("/safety/blocks", response_model=ApiResponse)
+async def get_safety_blocks() -> ApiResponse:
+    return ApiResponse(success=True, data={"blocks": backend_service.get_safety_blocks()})
+
+
+@router.get("/safety/stats", response_model=ApiResponse)
+async def get_safety_stats() -> ApiResponse:
+    return ApiResponse(success=True, data=backend_service.get_safety_stats())
+
 
 
 @router.get("/{agent_type}/status", response_model=ApiResponse)

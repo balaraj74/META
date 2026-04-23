@@ -87,9 +87,7 @@ class EpisodeCollector:
             self.agent_configs = yaml.safe_load(f)
 
         self.reward_model = RewardModel()
-        self.strategy_memory = StrategyMemory(
-            storage_path=str(self.output_dir / "strategy_memory.json")
-        )
+        self.strategy_memory = StrategyMemory()
         self._episode_results: list[EpisodeResult] = []
 
     async def collect_episode(
@@ -117,14 +115,7 @@ class EpisodeCollector:
         obs = await env.reset(scenario if scenario else None)
         state = env.state
 
-        # Inject strategy memory into agent context
-        for agent_type, agent in agents.items():
-            strategies = self.strategy_memory.get_strategy_prompt(
-                agent_type.value,
-                state.crisis.type.value,
-            )
-            if strategies:
-                agent.system_prompt += f"\n\n{strategies}"
+        # Strategy memory is now injected directly by BaseAgent._call_llm
 
         trajectory: list[dict[str, Any]] = []
         step_rewards: list[float] = []
@@ -208,18 +199,17 @@ class EpisodeCollector:
 
         # Record strategies
         for agent_type, agent in agents.items():
-            self.strategy_memory.record(
-                agent_type=agent_type.value,
-                crisis_type=state.crisis.type.value,
-                description=f"Episode {result.episode_id} — {agent.actions_taken} actions, "
-                           f"tokens={agent.total_tokens}",
-                episode=result.episode_id,
-                reward=result.total_reward,
-                success=result.survival_rate > 0.8,
-            )
+            lesson = {
+                "context": f"Crisis: {state.crisis.type.value}, Difficulty: {state.crisis.severity}",
+                "action_taken": f"{agent.actions_taken} actions taken during episode",
+                "outcome": f"Survival: {result.survival_rate:.1f}%",
+                "reward_delta": float(result.total_reward),
+                "crisis_type": state.crisis.type.value,
+                "step": result.steps,
+            }
+            self.strategy_memory.add_lesson(agent_type.value, lesson)
 
         self._episode_results.append(result)
-        self.strategy_memory.save()
 
         # Save trajectory
         self._save_trajectory(result)

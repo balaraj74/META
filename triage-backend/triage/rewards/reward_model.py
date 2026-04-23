@@ -34,6 +34,9 @@ class RewardBreakdown:
     depth: float = 0.0
     adaptation: float = 0.0
     expert_alignment: float = 0.0
+    blood_management: float = 0.0
+    ethics_compliance: float = 0.0
+    safety_compliance: float = 0.0
     penalties: float = 0.0
     workflow_bonus: float = 0.0
     terminal_bonus: float = 0.0
@@ -50,6 +53,9 @@ class RewardBreakdown:
             "depth": round(self.depth, 4),
             "adaptation": round(self.adaptation, 4),
             "expert_alignment": round(self.expert_alignment, 4),
+            "blood_management": round(self.blood_management, 4),
+            "ethics_compliance": round(self.ethics_compliance, 4),
+            "safety_compliance": round(self.safety_compliance, 4),
             "penalties": round(self.penalties, 4),
             "workflow_bonus": round(self.workflow_bonus, 4),
             "terminal_bonus": round(self.terminal_bonus, 4),
@@ -74,15 +80,17 @@ class RewardBreakdown:
 class RewardModel:
     """Production reward model with prompt-aligned component names."""
 
-    # Default weights — can be overridden by expert signals
     DEFAULT_WEIGHTS = {
-        "survival": 0.30,
-        "compliance": 0.20,
-        "coordination": 0.15,
+        "survival": 0.35,
+        "safety_compliance": 0.15,
+        "depth": 0.15,
         "oversight": 0.10,
-        "depth": 0.10,
-        "adaptation": 0.10,
-        "expert_alignment": 0.05,
+        "compliance": 0.10,
+        "ethics_compliance": 0.10,
+        "coordination": 0.05,
+        "blood_management": 0.0,
+        "adaptation": 0.0,
+        "expert_alignment": 0.0,
     }
 
     def __init__(self, custom_weights: dict[str, float] | None = None) -> None:
@@ -125,19 +133,25 @@ class RewardModel:
         breakdown.depth = self.depth_component.compute(actions)
         breakdown.adaptation = self.adaptation_component.compute(state, drift_events)
         breakdown.expert_alignment = self.expert_component.compute(state)
+        breakdown.blood_management = self._compute_blood_management(state)
+        breakdown.ethics_compliance = self._compute_ethics_compliance(state)
+        breakdown.safety_compliance = self._compute_safety_compliance(state)
         workflow_penalties, penalty_details = self._workflow_penalties(app_audits, action_result)
         breakdown.penalties = self._penalties(state) + workflow_penalties
         breakdown.workflow_bonus = self._workflow_bonus(messages, app_audits, action_result)
         breakdown.terminal_bonus = self._terminal_bonus(state)
 
         weighted_base = (
-            effective_weights["survival"] * breakdown.survival
-            + effective_weights["compliance"] * breakdown.compliance
-            + effective_weights["coordination"] * breakdown.coordination
-            + effective_weights["oversight"] * breakdown.oversight
-            + effective_weights["depth"] * breakdown.depth
-            + effective_weights["adaptation"] * breakdown.adaptation
-            + effective_weights["expert_alignment"] * breakdown.expert_alignment
+            effective_weights.get("survival", 0) * breakdown.survival
+            + effective_weights.get("compliance", 0) * breakdown.compliance
+            + effective_weights.get("coordination", 0) * breakdown.coordination
+            + effective_weights.get("oversight", 0) * breakdown.oversight
+            + effective_weights.get("depth", 0) * breakdown.depth
+            + effective_weights.get("adaptation", 0) * breakdown.adaptation
+            + effective_weights.get("expert_alignment", 0) * breakdown.expert_alignment
+            + effective_weights.get("blood_management", 0) * breakdown.blood_management
+            + effective_weights.get("ethics_compliance", 0) * breakdown.ethics_compliance
+            + effective_weights.get("safety_compliance", 0) * breakdown.safety_compliance
         )
         breakdown.total = (
             weighted_base
@@ -188,6 +202,13 @@ class RewardModel:
 
         total = sum(weights.values()) or 1.0
         return {name: value / total for name, value in weights.items()}
+
+    def _compute_safety_compliance(self, state: EnvironmentState) -> float:
+        base = 1.0
+        for block in state.safety_blocks:
+            if block.step == state.step_count:
+                base -= block.severity * 0.1
+        return base
 
     def _dominant_signal(self, state: EnvironmentState) -> str:
         signals = state.expert_signals or {}
@@ -305,3 +326,44 @@ class RewardModel:
         if state.violations_caught >= state.violations_injected:
             bonus += 0.05
         return bonus
+
+    def _compute_blood_management(self, state: EnvironmentState) -> float:
+        blood_inv = getattr(state.resources, "blood_inventory", {})
+        zeros = sum(1 for v in blood_inv.values() if v == 0)
+        
+        fulfilled = 0
+        if hasattr(state, "message_history") and state.message_history:
+            last_msgs = state.message_history[-5:]
+            if any("BLOOD_APPROVED" in getattr(m, "content", "") for m in last_msgs):
+                fulfilled = 1
+                
+        rew = 0.0
+        if zeros == 0:
+            rew += 0.1
+        else:
+            rew -= 0.2 * zeros
+            
+        rew += 0.15 * fulfilled
+        return rew
+
+    def _compute_ethics_compliance(self, state: EnvironmentState) -> float:
+        rew = 0.0
+        # +0.15 if all resource allocations this step have a corresponding RationingDecision
+        # Simplified: test based on if flag was triggered
+        allocs = [a for a in state.action_history[-15:] if a.timestamp >= state.action_history[-1].timestamp and a.action_type == ActionType.TRANSFER_TO_ICU]
+        if allocs and len(state.rationing_decisions) > 0 and state.rationing_decisions[-1].step == state.step_count:
+            rew += 0.15
+            
+        unaudited = sum(1 for a in state.action_history[-15:] if a.action_type.name == "FLAG_POLICY_VIOLATION" and "UNAUDITED_ALLOCATION" in a.reasoning)
+        rew -= 0.25 * unaudited
+        
+        cmo_rejected = sum(1 for a in state.action_history[-15:] if a.action_type.name == "FLAG_POLICY_VIOLATION" and "CMO_OVERRIDE_REJECTED" in a.reasoning)
+        rew -= 0.30 * cmo_rejected
+        
+        # +0.10 if a rationing decision was made AND compassionate care plan was assigned
+        made_decision = any(r.step == state.step_count for r in state.rationing_decisions)
+        compassionate = any(a.action_type.name == "ASSIGN_TREATMENT" and "COMPASSIONATE_CARE_PLAN" in a.reasoning for a in state.action_history[-15:])
+        if made_decision and compassionate:
+            rew += 0.10
+            
+        return rew

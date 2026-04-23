@@ -1,14 +1,5 @@
 """
-StrategyMemory — cross-episode self-improvement through strategy tracking.
-
-Each agent can:
-  - Record strategies used during an episode
-  - Track which strategies led to better rewards
-  - Retrieve top-performing strategies for future episodes
-  - Persist strategy memory to disk (JSON)
-
-This enables the "self-improvement" loop: agents refine their
-decision-making heuristics across training episodes without fine-tuning.
+StrategyMemory — cross-episode self-improvement through strategy tracking using ChromaDB RAG.
 """
 
 from __future__ import annotations
@@ -16,189 +7,127 @@ from __future__ import annotations
 import json
 import logging
 import os
-from dataclasses import dataclass, field
-from pathlib import Path
+import uuid
 from typing import Any
+from collections import Counter
+
+import chromadb
+from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass
-class Strategy:
-    """A single strategy entry with performance tracking."""
-    id: str
-    agent_type: str
-    description: str
-    crisis_type: str
-    episode: int
-    reward: float = 0.0
-    times_used: int = 1
-    success_rate: float = 0.0
-    context: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "agent_type": self.agent_type,
-            "description": self.description,
-            "crisis_type": self.crisis_type,
-            "episode": self.episode,
-            "reward": self.reward,
-            "times_used": self.times_used,
-            "success_rate": self.success_rate,
-            "context": self.context,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Strategy:
-        return cls(**data)
-
-
 class StrategyMemory:
-    """Persistent strategy memory for cross-episode learning.
+    """Persistent strategy memory using ChromaDB for semantic RAG."""
 
-    Strategies are grouped by agent_type × crisis_type for efficient retrieval.
-    """
+    def __init__(self, storage_path: str = "./data/chroma_db/") -> None:
+        os.makedirs(storage_path, exist_ok=True)
+        self._storage_path = storage_path
+        self._client = chromadb.PersistentClient(path=storage_path)
+        self._ef = SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+        self._collections: dict[str, Any] = {}
 
-    def __init__(self, storage_path: str = "./data/strategy_memory.json") -> None:
-        self._strategies: dict[str, list[Strategy]] = {}  # key: "{agent}:{crisis}"
-        self._storage_path = Path(storage_path)
-        self._load()
-
-    # ── Recording ────────────────────────────────────────
-
-    def record(
-        self,
-        agent_type: str,
-        crisis_type: str,
-        description: str,
-        episode: int,
-        reward: float,
-        success: bool,
-        context: dict[str, Any] | None = None,
-    ) -> Strategy:
-        """Record a strategy used during an episode."""
-        key = f"{agent_type}:{crisis_type}"
-        strategy_id = f"{agent_type}-ep{episode}-{len(self._strategies.get(key, []))}"
-
-        # Check if similar strategy already exists
-        existing = self._find_similar(key, description)
-        if existing:
-            existing.times_used += 1
-            existing.reward = (existing.reward * (existing.times_used - 1) + reward) / existing.times_used
-            existing.success_rate = (
-                (existing.success_rate * (existing.times_used - 1) + float(success))
-                / existing.times_used
+    def _get_collection(self, agent_type: str) -> Any:
+        # agent_type could be an enum, so convert to string. Ensure no invalid characters.
+        cleaned_type = str(getattr(agent_type, "value", agent_type)).lower().replace("_", "-")
+        collection_name = f"triage-memory-{cleaned_type}"
+        
+        if collection_name not in self._collections:
+            self._collections[collection_name] = self._client.get_or_create_collection(
+                name=collection_name,
+                embedding_function=self._ef
             )
-            return existing
+        return self._collections[collection_name]
 
-        strategy = Strategy(
-            id=strategy_id,
-            agent_type=agent_type,
-            description=description,
-            crisis_type=crisis_type,
-            episode=episode,
-            reward=reward,
-            success_rate=float(success),
-            context=context or {},
+    def add_lesson(self, agent_type: str, lesson: dict[str, Any]) -> None:
+        """Upsert a lesson to the agent's ChromaDB collection."""
+        col = self._get_collection(agent_type)
+        
+        context_str = lesson.get("context", "")
+        action_str = lesson.get("action_taken", "")
+        # Embed context + action_taken
+        document = f"Context: {context_str}\nAction: {action_str}"
+        
+        # Store full dict as metadata
+        metadata = {
+            "context": context_str,
+            "action_taken": action_str,
+            "outcome": lesson.get("outcome", ""),
+            "reward_delta": float(lesson.get("reward_delta", 0.0)),
+            "crisis_type": lesson.get("crisis_type", ""),
+            "step": int(lesson.get("step", 0))
+        }
+        
+        lesson_id = str(uuid.uuid4())
+        col.upsert(
+            ids=[lesson_id],
+            documents=[document],
+            metadatas=[metadata]
         )
+        logger.debug(f"Added memory to {agent_type}: {action_str} (reward: {metadata['reward_delta']})")
 
-        if key not in self._strategies:
-            self._strategies[key] = []
-        self._strategies[key].append(strategy)
-
-        # Prune to keep top strategies
-        self._prune(key, max_entries=50)
-
-        return strategy
-
-    # ── Retrieval ────────────────────────────────────────
-
-    def get_top_strategies(
-        self,
-        agent_type: str,
-        crisis_type: str,
-        limit: int = 5,
-    ) -> list[Strategy]:
-        """Get top-performing strategies for an agent + crisis type."""
-        key = f"{agent_type}:{crisis_type}"
-        strategies = self._strategies.get(key, [])
-
-        # Sort by composite score: reward × success_rate × log(times_used)
-        import math
-        scored = sorted(
-            strategies,
-            key=lambda s: s.reward * s.success_rate * (1 + math.log1p(s.times_used)),
-            reverse=True,
+    def query_lessons(self, agent_type: str, current_context: str, top_k: int = 3) -> list[dict[str, Any]]:
+        """Retrieve top-k semantically similar past lessons."""
+        col = self._get_collection(agent_type)
+        
+        # If collection is empty, return early
+        if col.count() == 0:
+            return []
+            
+        results = col.query(
+            query_texts=[current_context],
+            n_results=min(top_k, col.count())
         )
-        return scored[:limit]
+        
+        lessons = []
+        if results and results.get("metadatas") and len(results["metadatas"]) > 0:
+            for metadata in results["metadatas"][0]:
+                lessons.append(metadata)
+        return lessons
 
-    def get_strategy_prompt(
-        self,
-        agent_type: str,
-        crisis_type: str,
-        limit: int = 3,
-    ) -> str:
-        """Generate a prompt section with top strategies for LLM context."""
-        top = self.get_top_strategies(agent_type, crisis_type, limit)
-        if not top:
-            return "No prior strategies recorded for this scenario."
+    def forget_bad_lessons(self, agent_type: str, reward_threshold: float = -0.2) -> int:
+        """Delete entries where reward_delta < threshold."""
+        col = self._get_collection(agent_type)
+        if col.count() == 0:
+            return 0
+            
+        initial_count = col.count()
+        col.delete(where={"reward_delta": {"$lt": reward_threshold}})
+        final_count = col.count()
+        
+        removed = initial_count - final_count
+        if removed > 0:
+            logger.info(f"Forgot {removed} bad lessons from {agent_type}")
+        return removed
 
-        lines = ["## Successful Strategies from Previous Episodes\n"]
-        for i, s in enumerate(top, 1):
-            lines.append(
-                f"{i}. **{s.description}**\n"
-                f"   Reward: {s.reward:.2f} | Success Rate: {s.success_rate:.0%} | "
-                f"Used: {s.times_used} times\n"
-            )
-        return "\n".join(lines)
-
-    def get_all(self) -> dict[str, list[dict[str, Any]]]:
-        """Get all strategies as dicts."""
+    def summarize(self, agent_type: str) -> dict[str, Any]:
+        """Return count, avg reward_delta, and top crisis_type seen."""
+        col = self._get_collection(agent_type)
+        data = col.get()
+        metadatas = data.get("metadatas", [])
+        
+        count = len(metadatas)
+        if count == 0:
+            return {"count": 0, "avg_reward_delta": 0.0, "top_crisis_type": None}
+            
+        total_reward = sum(m.get("reward_delta", 0.0) for m in metadatas)
+        avg_reward = total_reward / count
+        
+        crises = [m.get("crisis_type", "") for m in metadatas if m.get("crisis_type")]
+        top_crisis = Counter(crises).most_common(1)[0][0] if crises else None
+        
         return {
-            key: [s.to_dict() for s in strategies]
-            for key, strategies in self._strategies.items()
+            "count": count,
+            "avg_reward_delta": avg_reward,
+            "top_crisis_type": top_crisis
         }
 
-    # ── Persistence ──────────────────────────────────────
-
-    def save(self) -> None:
-        """Persist strategies to disk."""
-        self._storage_path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
-            key: [s.to_dict() for s in strategies]
-            for key, strategies in self._strategies.items()
-        }
-        with open(self._storage_path, "w") as f:
-            json.dump(data, f, indent=2)
-        logger.info("Saved %d strategy groups to %s", len(data), self._storage_path)
-
-    def _load(self) -> None:
-        """Load strategies from disk if available."""
-        if not self._storage_path.exists():
-            return
-        try:
-            with open(self._storage_path) as f:
-                data = json.load(f)
-            for key, strategies in data.items():
-                self._strategies[key] = [Strategy.from_dict(s) for s in strategies]
-            logger.info("Loaded %d strategy groups from %s", len(data), self._storage_path)
-        except Exception:
-            logger.warning("Failed to load strategy memory from %s", self._storage_path)
-
-    # ── Internal ─────────────────────────────────────────
-
-    def _find_similar(self, key: str, description: str) -> Strategy | None:
-        """Find a strategy with a similar description (fuzzy match)."""
-        for s in self._strategies.get(key, []):
-            # Simple similarity — first 50 chars match
-            if s.description[:50].lower() == description[:50].lower():
-                return s
-        return None
-
-    def _prune(self, key: str, max_entries: int = 50) -> None:
-        """Keep only the top strategies by reward."""
-        strategies = self._strategies.get(key, [])
-        if len(strategies) > max_entries:
-            strategies.sort(key=lambda s: s.reward * s.success_rate, reverse=True)
-            self._strategies[key] = strategies[:max_entries]
+    def get_best_lessons(self, agent_type: str, limit: int = 3) -> list[dict[str, Any]]:
+        """Return the top lessons by reward_delta."""
+        col = self._get_collection(agent_type)
+        data = col.get()
+        metadatas = data.get("metadatas", [])
+        if not metadatas:
+            return []
+            
+        sorted_md = sorted(metadatas, key=lambda x: x.get("reward_delta", 0.0), reverse=True)
+        return sorted_md[:limit]

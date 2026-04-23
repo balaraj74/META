@@ -200,6 +200,8 @@ class HospitalEnv:
             ventilators_total=crisis.icu_config.get("ventilators", 15),
             staff_ratio=crisis.staff_reduction,
         )
+        if crisis.blood_inventory:
+            resources.blood_inventory = crisis.blood_inventory
 
         # Build pending patients queue (patients not yet admitted)
         pending = crisis.patient_list.copy()

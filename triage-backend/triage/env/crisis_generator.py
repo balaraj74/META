@@ -274,6 +274,13 @@ class CrisisGenerator:
             for role in staff_roster:
                 staff_roster[role] = max(1, int(staff_roster[role] * staff_reduction))
 
+        blood_inv = {
+            "O+": 20, "O-": 10, "A+": 15, "A-": 8, "B+": 12, "B-": 6, "AB+": 5, "AB-": 3
+        }
+        if ctype == CrisisType.MASS_CASUALTY:
+            blood_inv["O+"] = 8
+            blood_inv["O-"] = 4
+
         return Crisis(
             type=ctype,
             name=name,
@@ -284,10 +291,11 @@ class CrisisGenerator:
             special_rules=self._special_rules(ctype),
             patient_list=immediate,
             drug_inventory=drug_inv,
+            blood_inventory=blood_inv,
             staff_roster=staff_roster,
             icu_config={
-                "beds": 20,
-                "ventilators": 15,
+                "beds": 2 if ctype == CrisisType.MASS_CASUALTY else 20,
+                "ventilators": 3 if ctype == CrisisType.MASS_CASUALTY else 15,
                 "overflow_threshold": 0.9,
             },
             insurance_policies={

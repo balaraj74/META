@@ -10,7 +10,7 @@
 
 **Meta PyTorch OpenEnv Hackathon Submission**
 
-*A production-grade multi-agent AI system where 6 specialized hospital agents coordinate in real time to manage high-stakes crisis scenarios, powered by a DPO-fine-tuned Qwen2.5-0.5B model trained entirely on consumer hardware.*
+*A production-grade multi-agent AI system where 8 specialized hospital agents coordinate in real time to manage high-stakes crisis scenarios, powered by a DPO-fine-tuned Qwen2.5-0.5B model trained entirely on consumer hardware. Enhanced with a real-time Clinical Safety Constitution, ChromaDB RAG memory, and priority-aware async hierarchical message routing.*
 
 </div>
 
@@ -20,7 +20,7 @@
 
 1. [Overview](#-overview)
 2. [Architecture](#-architecture)
-3. [The 6 Specialized Agents](#-the-6-specialized-agents)
+3. [The 8 Specialized Agents](#-the-8-specialized-agents)
 4. [Model Training Pipeline](#-model-training-pipeline)
 5. [Benchmark Results](#-benchmark-results)
 6. [Project Structure](#-project-structure)
@@ -35,7 +35,7 @@
 
 ## 🎯 Overview
 
-**TRIAGE** is a hospital crisis simulation built on the **OpenEnv** agentic framework. Six specialized AI agents—each with a distinct role, tool-set, and reward signal—operate as a coordinated team to triage patients, manage ICU capacity, dispatch drugs, staff emergency shifts, protect EHR integrity, and maintain governance oversight.
+**TRIAGE** is a hospital crisis simulation built on the **OpenEnv** agentic framework. Eight specialized AI agents—each with a distinct role, structured Pydantic tool-set, and reward signal—operate as a coordinated team to triage patients, manage ICU capacity, dispatch drugs, staff emergency shifts, protect EHR integrity, maintain blood inventory, navigate ethical dilemmas, and maintain governance oversight.
 
 The entire system was trained, merged, benchmarked, and deployed on a single consumer GPU (NVIDIA RTX 2050, 4 GB VRAM), proving that hospital-grade clinical reasoning does not require multi-billion-parameter frontier models.
 
@@ -63,21 +63,25 @@ The entire system was trained, merged, benchmarked, and deployed on a single con
 │                         TRIAGE System                               │
 │                                                                     │
 │  ┌──────────────────────────────────────────────────────────────┐   │
-│  │                   OpenEnv Environment                         │   │
+│  │                   OpenEnv Environment                        │   │
 │  │                                                              │   │
 │  │  Crisis State ──→ Typed Message Bus ──→ Agent Observations   │   │
-│  │      │                   │                     │            │   │
-│  │  Reward Model         Policies            Agent Actions     │   │
-│  └──────────────────────────────────────────────────────────────┘   │
+│  │      │                   │                     │             │   │
+│  │  Reward Model         Policies            Agent Actions      │   │
+│  │                                                │             │   │
+│  │                                       ┌────────▼─────────┐   │   │
+│  │                                       │Safety Constitution│   │   │
+│  └───────────────────────────────────────┴──────────────────┴───┘   │
 │                              │                                      │
-│       ┌──────────────────────┼──────────────────────┐              │
-│       │            6 Specialized Agents             │              │
-│       │                                             │              │
-│  🎯 CMO        🚑 ER        🏥 ICU       💊 Pharm  │              │
-│  Oversight    Triage      Management    Agency     │              │
-│                                                    │              │
-│             👩‍⚕️ HR Rostering    💻 IT Systems         │              │
-│       └─────────────────────────────────────────────┘              │
+│       ┌──────────────────────┼──────────────────────┐               │
+│       │            8 Specialized Agents             │               │
+│       │                                             │               │
+│  🎯 CMO        🚑 ER        🏥 ICU       💊 Pharm   │               │
+│  Oversight    Triage      Management    Agency      │               │
+│                                                     │               │
+│  👩‍⚕️ HR        💻 IT        🩸 Blood     ⚖️ Ethics   │               │
+│  Rostering    Systems      Bank         Committee   │               │
+│       └─────────────────────────────────────────────┘               │
 │                              │                                      │
 │  ┌──────────────────────┐   │   ┌──────────────────────────────┐  │
 │  │  DPO-Trained Model   │◄──┘   │    FastAPI + WebSocket        │  │
@@ -92,17 +96,19 @@ The entire system was trained, merged, benchmarked, and deployed on a single con
 | Layer | Technology | Purpose |
 |---|---|---|
 | **Environment** | OpenEnv-compatible `HospitalCrisisEnv` | Simulate patient flow, beds, policies |
-| **Agent Base** | `BaseAgent` + `TriageMessage` bus | Typed inter-agent communication |
-| **LLM Backbone** | Qwen2.5-0.5B-Instruct + LoRA (r=32) | Clinical decision reasoning |
+| **Agent Base** | `BaseAgent` + Async Priority Queues | Priority-aware hierarchical routing |
+| **Safety Layer** | `SafetyConstitution` | Real-time clinical action sanitization and fallback mechanism |
+| **LLM Backbone** | Qwen2.5-0.5B-Instruct + LoRA (r=32) | Clinical decision reasoning with structured Pydantic tool calling |
 | **Training** | DPO via TRL `DPOTrainer` | Preference alignment on medical QA pairs |
 | **Model Merge** | PEFT `merge_and_unload` | Adapter-free production deployment |
 | **Serving** | FastAPI + WebSocket | REST API + real-time streaming |
 | **Demo** | Gradio on HF Spaces | Live crisis simulation UI |
+| **Memory** | ChromaDB | Local vector store for agent RAG StrategyMemory |
 | **Storage** | SQLite (`triage.db`) | Episode logs & agent metrics |
 
 ---
 
-## 🤖 The 6 Specialized Agents
+## 🤖 The 8 Specialized Agents
 
 Each agent has a dedicated `system_prompt`, tool-set, and reward heuristic. Together they form a closed-loop governance hierarchy.
 
@@ -161,6 +167,24 @@ Key Actions: FLAG_POLICY_VIOLATION, VERIFY_INSURANCE, UPDATE_EHR, RESTORE_SERVIC
 ```
 
 Maintains data integrity under failure. When the EHR goes down due to equipment failure, IT immediately switches all departments to paper-based backup and notifies via the message bus.
+
+### 7. 🩸 Blood Bank Agent
+```
+Role: Blood product inventory management, cross-matching, procurement
+Triggers: Incoming REQUEST_BLOOD actions; thresholds for mass casualty
+Key Actions: ESCALATE_TO_CMO, SEND_MESSAGE, EMERGENCY_PROCUREMENT
+```
+
+Tracks blood type stock levels (A+, A-, B+, B-, AB+, AB-, O+, O-), cross-matches incoming REQUEST_BLOOD actions against inventory, triggers emergency donor procurement during mass casualties, and flags critical shortages.
+
+### 8. ⚖️ Ethics Committee Agent
+```
+Role: Ethical mediation, critical resource rationing, tie-breaking
+Triggers: Resource rationing (ventilator/icu/blood supply < demand) or CMO_OVERSIGHT escalations
+Key Actions: SEND_MESSAGE, FLAG_POLICY_VIOLATION
+```
+
+Operates as a supreme advisory board that evaluates rationing scenarios through configured ethical frameworks (e.g., Utilitarian, Equity, Clinical Priority). It provides tie-breaking mediations during deadlocks and reviews unauthorized CMO overrides.
 
 ---
 
@@ -323,13 +347,16 @@ triage-backend/
 ├── triage/
 │   ├── __init__.py
 │   ├── agents/
-│   │   ├── base_agent.py        # BaseAgent, TriageMessage, tool dispatch
-│   │   ├── specialized.py       # ✅ All 6 specialized agent implementations
+│   │   ├── base_agent.py        # BaseAgent with ChromaDB memory & Pydantic tools
+│   │   ├── routing_rules.py     # Priority-aware hierarchical message routing
+│   │   ├── specialized.py       # ✅ All 8 specialized agent implementations
 │   │   └── __init__.py
 │   ├── environment/
 │   │   ├── hospital_env.py      # HospitalCrisisEnv (OpenEnv-compatible)
-│   │   ├── reward_model.py      # Composite reward: survival + ICU + violations
+│   │   ├── reward_model.py      # Composite reward: survival + ICU + violations + safety compliance
 │   │   └── __init__.py
+│   ├── safety/
+│   │   └── constitution.py      # Clinical Safety Constitution Middleware
 │   ├── training/
 │   │   ├── dpo_trainer.py       # DPO dataset builder + TRL trainer wrapper
 │   │   └── __init__.py
@@ -464,6 +491,8 @@ Streams real-time agent decisions as JSON events during a simulation:
 | `UPDATE_EHR` | ER Triage, IT | Sync patient records |
 | `VERIFY_INSURANCE` | IT Systems | Insurance coverage check |
 | `RESTORE_SERVICE` | IT Systems | Recover failed system/equipment |
+| `REQUEST_BLOOD` | ER, ICU | Ask Blood Bank for blood products |
+| `RATION_RESOURCE` | Ethics Committee | Make ethical triage decisions |
 
 ---
 
@@ -686,10 +715,14 @@ The **HR Rostering Agent** (`hr_rostering`) directly addresses the Scale AI bonu
 
 ### Innovation Points
 
-1. **Consumer GPU training** — full DPO pipeline in <4.5 hours on RTX 2050 (4 GB VRAM)
-2. **Domain specificity beats scale** — 0.5B DPO model achieves 100% survival in structured crisis tasks where generic 70B+ models are not needed
-3. **Closed-loop governance** — CMO agent provides real-time oversight of all other agents, creating a self-correcting system
-4. **Production merge** — LoRA adapters fully merged; zero inference-time PEFT overhead
+1. **Safety Constitution Middleware** — Real-time deterministic blocking of clinical safety breaches before they propagate.
+2. **ChromaDB StrategyMemory** — Agents use semantic RAG to pull lessons from past episodes with vector representations.
+3. **Priority Hierarchical Routing** — Deadlock mitigation and threshold-based escalation rules using a global asynchronous priority queue.
+4. **Structured Tool Calling** — High fidelity outputs achieved via strict Pydantic integration for LLM endpoints.
+5. **Consumer GPU training** — full DPO pipeline in <4.5 hours on RTX 2050 (4 GB VRAM)
+6. **Domain specificity beats scale** — 0.5B DPO model achieves 100% survival in structured crisis tasks
+7. **Closed-loop governance** — CMO agent provides real-time oversight of all other agents
+8. **Production merge** — LoRA adapters fully merged; zero inference-time PEFT overhead
 
 ---
 

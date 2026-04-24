@@ -301,6 +301,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Command Center Router (chat + inject) ─────────────────────────────────────
+try:
+    from triage.api.routers.command import router as _command_router
+    app.include_router(_command_router, tags=["Command Center"])
+except Exception as _e:  # pragma: no cover
+    import logging as _log
+    _log.getLogger(__name__).warning("Command router failed to load: %s", _e)
+
 
 # ── Health ────────────────────────────────────────────────────────────────────
 

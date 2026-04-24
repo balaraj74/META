@@ -16,6 +16,7 @@ import { Route as ReplayRouteImport } from './routes/replay'
 import { Route as PitchRouteImport } from './routes/pitch'
 import { Route as MobileRouteImport } from './routes/mobile'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as CommandRouteImport } from './routes/command'
 import { Route as IndexRouteImport } from './routes/index'
 
 const VisualizerRoute = VisualizerRouteImport.update({
@@ -53,6 +54,11 @@ const DashboardRoute = DashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CommandRoute = CommandRouteImport.update({
+  id: '/command',
+  path: '/command',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -61,6 +67,7 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/command': typeof CommandRoute
   '/dashboard': typeof DashboardRoute
   '/mobile': typeof MobileRoute
   '/pitch': typeof PitchRoute
@@ -71,6 +78,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/command': typeof CommandRoute
   '/dashboard': typeof DashboardRoute
   '/mobile': typeof MobileRoute
   '/pitch': typeof PitchRoute
@@ -82,6 +90,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/command': typeof CommandRoute
   '/dashboard': typeof DashboardRoute
   '/mobile': typeof MobileRoute
   '/pitch': typeof PitchRoute
@@ -94,6 +103,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/command'
     | '/dashboard'
     | '/mobile'
     | '/pitch'
@@ -104,6 +114,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/command'
     | '/dashboard'
     | '/mobile'
     | '/pitch'
@@ -114,6 +125,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/command'
     | '/dashboard'
     | '/mobile'
     | '/pitch'
@@ -125,6 +137,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CommandRoute: typeof CommandRoute
   DashboardRoute: typeof DashboardRoute
   MobileRoute: typeof MobileRoute
   PitchRoute: typeof PitchRoute
@@ -185,6 +198,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/command': {
+      id: '/command'
+      path: '/command'
+      fullPath: '/command'
+      preLoaderRoute: typeof CommandRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -197,6 +217,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CommandRoute: CommandRoute,
   DashboardRoute: DashboardRoute,
   MobileRoute: MobileRoute,
   PitchRoute: PitchRoute,

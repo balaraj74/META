@@ -67,8 +67,8 @@ class CMOOversightAgent(BaseAgent):
     - Ensure policy compliance across the board
     """
 
-    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True) -> None:
-        super().__init__(AgentType.CMO_OVERSIGHT, config, bus, mock_llm)
+    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True, model_name: str | None = None) -> None:
+        super().__init__(AgentType.CMO_OVERSIGHT, config, bus, mock_llm, model_name)
 
     async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
         context = self._build_state_context(state)
@@ -173,8 +173,8 @@ class ERTriageAgent(BaseAgent):
     - Escalate critical cases to ICU or CMO
     """
 
-    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True) -> None:
-        super().__init__(AgentType.ER_TRIAGE, config, bus, mock_llm)
+    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True, model_name: str | None = None) -> None:
+        super().__init__(AgentType.ER_TRIAGE, config, bus, mock_llm, model_name)
 
     async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
         context = self._build_state_context(state)
@@ -254,8 +254,8 @@ class ICUManagementAgent(BaseAgent):
     - Overflow protocol management
     """
 
-    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True) -> None:
-        super().__init__(AgentType.ICU_MANAGEMENT, config, bus, mock_llm)
+    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True, model_name: str | None = None) -> None:
+        super().__init__(AgentType.ICU_MANAGEMENT, config, bus, mock_llm, model_name)
 
     async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
         context = self._build_state_context(state)
@@ -347,8 +347,8 @@ class PharmacyAgent(BaseAgent):
     - Enforce double-verification for controlled substances
     """
 
-    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True) -> None:
-        super().__init__(AgentType.PHARMACY, config, bus, mock_llm)
+    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True, model_name: str | None = None) -> None:
+        super().__init__(AgentType.PHARMACY, config, bus, mock_llm, model_name)
 
     async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
         context = self._build_state_context(state)
@@ -439,8 +439,8 @@ class HRRosteringAgent(BaseAgent):
     - Enforce work-hour limits
     """
 
-    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True) -> None:
-        super().__init__(AgentType.HR_ROSTERING, config, bus, mock_llm)
+    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True, model_name: str | None = None) -> None:
+        super().__init__(AgentType.HR_ROSTERING, config, bus, mock_llm, model_name)
 
     async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
         context = self._build_state_context(state)
@@ -513,8 +513,8 @@ class ITSystemsAgent(BaseAgent):
     - Respond to schema drift / policy changes
     """
 
-    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True) -> None:
-        super().__init__(AgentType.IT_SYSTEMS, config, bus, mock_llm)
+    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True, model_name: str | None = None) -> None:
+        super().__init__(AgentType.IT_SYSTEMS, config, bus, mock_llm, model_name)
 
     async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
         context = self._build_state_context(state)
@@ -615,23 +615,25 @@ def create_agent(
     config: dict[str, Any],
     bus: MessageBus,
     mock_llm: bool = True,
+    model_name: str | None = None,
 ) -> BaseAgent:
     """Factory function to create typed agents."""
     cls = AGENT_CLASSES.get(agent_type)
     if cls is None:
         raise ValueError(f"Unknown agent type: {agent_type}")
-    return cls(config=config, bus=bus, mock_llm=mock_llm)
+    return cls(config=config, bus=bus, mock_llm=mock_llm, model_name=model_name)
 
 
 def create_all_agents(
     configs: dict[str, Any],
     bus: MessageBus,
     mock_llm: bool = True,
+    model_name: str | None = None,
 ) -> dict[AgentType, BaseAgent]:
     """Create all 6 agents from the agents.yaml config."""
     agents = {}
     for agent_type in AgentType:
         agent_config = configs.get("agents", {}).get(agent_type.value, {})
-        agents[agent_type] = create_agent(agent_type, agent_config, bus, mock_llm)
-        logger.info("Created agent: %s (mock_llm=%s)", agent_type.value, mock_llm)
+        agents[agent_type] = create_agent(agent_type, agent_config, bus, mock_llm, model_name)
+        logger.info("Created agent: %s (mock_llm=%s, model=%s)", agent_type.value, mock_llm, model_name)
     return agents

@@ -584,8 +584,8 @@ def main() -> None:
     parser.add_argument(
         "--model",
         type=str,
-        default="gemma4:e4b",
-        help="Ollama model name (default: gemma4:e4b)",
+        default="qwen3.5:0.8b",
+        help="Ollama model name (default: qwen3.5:0.8b)",
     )
     parser.add_argument(
         "--episodes",

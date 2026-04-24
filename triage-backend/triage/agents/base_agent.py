@@ -18,7 +18,8 @@ import logging
 import os
 import time
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Optional
+import httpx
 
 from triage.agents.message_bus import MessageBus
 from triage.env.state import (
@@ -46,11 +47,13 @@ class BaseAgent(ABC):
         config: dict[str, Any],
         message_bus: MessageBus,
         mock_llm: bool = True,
+        model_name: Optional[str] = None,
     ) -> None:
         self.agent_type = agent_type
         self.config = config
         self.bus = message_bus
         self.mock_llm = mock_llm
+        self.model_name = model_name or os.getenv("OLLAMA_MODEL") or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
         # From config/agents.yaml
         self.system_prompt: str = config.get("system_prompt", "")
@@ -210,20 +213,7 @@ class BaseAgent(ABC):
 
         Returns parsed JSON response from the model.
         """
-        # Import here to avoid circular dependency
-        try:
-            import google.generativeai as genai
-
-            model = genai.GenerativeModel(
-                model_name=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
-                system_instruction=self.system_prompt,
-                generation_config={
-                    "temperature": temperature,
-                    "response_mime_type": "application/json",
-                },
-            )
-
-            full_prompt = f"""
+        full_prompt = f"""
 {state_context}
 
 ---
@@ -234,24 +224,61 @@ Respond with a JSON object containing:
 - "actions": list of actions to take, each with "action_type", "target_id", "priority", "reasoning"
 - "messages": list of messages to send, each with "to_agent", "content", "msg_type", "priority"
 """
-            t0 = time.perf_counter()
-            response = await asyncio.to_thread(
-                model.generate_content, full_prompt
-            )
-            elapsed = time.perf_counter() - t0
+        t0 = time.perf_counter()
+        
+        try:
+            # Logic for Gemini
+            if "gemini" in self.model_name.lower():
+                import google.generativeai as genai
+                
+                model = genai.GenerativeModel(
+                    model_name=self.model_name,
+                    system_instruction=self.system_prompt,
+                    generation_config={
+                        "temperature": temperature,
+                        "response_mime_type": "application/json",
+                    },
+                )
+                
+                response = await asyncio.to_thread(
+                    model.generate_content, full_prompt
+                )
+                text = response.text
+                
+            # Logic for Ollama / Local LLM
+            else:
+                url = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
+                payload = {
+                    "model": self.model_name,
+                    "prompt": full_prompt,
+                    "system": self.system_prompt,
+                    "stream": False,
+                    "format": "json",
+                    "options": {
+                        "temperature": temperature,
+                    }
+                }
+                
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    resp = await client.post(url, json=payload)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    text = data.get("response", "{}")
 
-            text = response.text
+            elapsed = time.perf_counter() - t0
             tokens = len(text.split()) * 2
             self.total_tokens += tokens
 
             logger.debug(
-                "Agent %s LLM call: %d tokens, %.1fs",
-                self.agent_type.value, tokens, elapsed,
+                "Agent %s LLM call (%s): %d tokens, %.1fs",
+                self.agent_type.value, self.model_name, tokens, elapsed,
             )
 
             return json.loads(text)
+            
         except Exception as e:
-            logger.warning("LLM call failed for %s: %s", self.agent_type.value, e)
+            logger.warning("LLM call failed for %s (%s): %s", 
+                        self.agent_type.value, self.model_name, e)
             return {"actions": [], "messages": []}
 
     # ── Internal ─────────────────────────────────────────

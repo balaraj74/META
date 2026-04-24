@@ -182,13 +182,13 @@ def _try_llm_response(agent: str, message: str, context: str) -> str | None:
         response = httpx.post(
             "http://localhost:11434/api/chat",
             json={
-                "model": "qwen3.5:0.8b",
+                "model": os.getenv("MODEL_NAME", "qwen3.5:4b"),
                 "messages": chat,
                 "stream": False,
                 "think": False,          # disable CoT — returns real content instantly
                 "options": {
-                    "num_ctx": 512,      # short context sufficient for 1-2 sentence replies
-                    "num_predict": 150,  # cap output tokens for speed
+                    "num_ctx": 2048,     # increased context for 4B model reasoning
+                    "num_predict": 256,  # increased token cap for 4B model quality
                 }
             },
             timeout=30.0
@@ -236,7 +236,7 @@ async def chat(req: ChatRequest) -> ApiResponse:
             "color": ctx["color"],
             "response": reply,
             "tokens": len(reply.split()),
-            "model": "mock" if is_mock else "qwen3.5:0.8b",
+            "model": "mock" if is_mock else os.getenv("MODEL_NAME", "qwen3.5:4b"),
         },
     )
 

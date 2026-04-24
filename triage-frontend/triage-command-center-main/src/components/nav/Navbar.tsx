@@ -16,6 +16,7 @@ function RedCross({ className = "h-5 w-5" }: { className?: string }) {
 const LINKS = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/visualizer", label: "Visualizer" },
+  { to: "/command", label: "Command Center" },
   { to: "/training", label: "Training" },
   { to: "/sponsors", label: "Sponsors" },
   { to: "/replay", label: "Replay" },
@@ -90,12 +91,14 @@ function NavLink({
   to,
   children,
 }: {
-  to: "/" | "/dashboard" | "/visualizer" | "/training" | "/sponsors" | "/replay";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  to: string;
   children: React.ReactNode;
 }) {
   return (
     <Link
-      to={to}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      to={to as any}
       className="relative py-1 text-text-secondary hover:text-text-primary"
       activeProps={{
         className:

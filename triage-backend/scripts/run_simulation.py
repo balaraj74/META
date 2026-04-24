@@ -52,7 +52,7 @@ async def run_episode(args: argparse.Namespace) -> None:
     print(f"  TRIAGE — Hospital Crisis Simulation")
     print(f"{'='*60}")
     print(f"  Crisis:     {state.crisis.type.value}")
-    print(f"  Difficulty: {state.crisis.difficulty:.1f}")
+    print(f"  Difficulty: {args.difficulty:.1f}")
     print(f"  Patients:   {len(state.patients)}")
     print(f"  Max Steps:  {args.steps}")
     print(f"  LLM Mode:   {'Mock (rule-based)' if args.mock else 'Live (Gemini)'}")

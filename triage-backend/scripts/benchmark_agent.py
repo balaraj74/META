@@ -86,7 +86,9 @@ class AgentStats:
 
     @property
     def correct_ratio(self) -> float:
-        return self.correct_actions / max(1, self.actions_taken)
+        if self.actions_taken == 0:
+            return 1.0
+        return self.correct_actions / self.actions_taken
 
     @property
     def mean_latency_ms(self) -> float:
@@ -190,12 +192,14 @@ async def run_episode(
     episode_idx: int,
     max_steps: int,
     config: dict[str, Any],
+    mock_llm: bool = True,
+    model_name: str = "qwen3.5:0.8b",
 ) -> EpisodeResult:
 
     # Create env and agents
     env = HospitalEnv(seed=episode_idx * 37, max_steps=max_steps, difficulty=scenario["difficulty"])
     bus = MessageBus()
-    agents = create_all_agents(config, bus, mock_llm=True)
+    agents = create_all_agents(config, bus, mock_llm=mock_llm, model_name=model_name)
 
     # Reset env with scenario
     obs = await env.reset(scenario={"crisis_type": scenario["crisis_type"], "difficulty": scenario["difficulty"]})
@@ -379,13 +383,16 @@ async def run_benchmark(
     episodes_per_scenario: int,
     steps_per_episode: int,
     output_path: str | None,
+    mock_llm: bool = True,
+    model_name: str = "qwen3.5:0.8b",
 ) -> None:
 
     config = _load_agent_config()
 
+    mode_str = "Rule-based (mock-LLM)" if mock_llm else f"LIVE LLM ({model_name})"
     print()
     print("=" * 72)
-    print("  TRIAGE Multi-Agent Benchmark  —  Rule-based (mock-LLM) mode")
+    print(f"  TRIAGE Multi-Agent Benchmark  —  {mode_str} mode")
     print(f"  Scenarios : {len(SCENARIOS)}   Episodes/scenario : {episodes_per_scenario}   Steps/episode : {steps_per_episode}")
     print("=" * 72)
     print()
@@ -398,7 +405,7 @@ async def run_benchmark(
         t0 = time.perf_counter()
 
         for ep_idx in range(episodes_per_scenario):
-            ep = await run_episode(scenario, ep_idx, steps_per_episode, config)
+            ep = await run_episode(scenario, ep_idx, steps_per_episode, config, mock_llm=mock_llm, model_name=model_name)
             sc_result.episodes.append(ep)
             print(".", end="", flush=True)
 
@@ -458,12 +465,16 @@ def main() -> None:
     parser.add_argument("--episodes", type=int, default=3,  help="Episodes per scenario")
     parser.add_argument("--steps",    type=int, default=20, help="Steps per episode")
     parser.add_argument("--output",   type=str, default=None, help="JSON output path")
+    parser.add_argument("--live",     action="store_true",    help="Use real LLM instead of mock")
+    parser.add_argument("--model",    type=str, default="qwen3.5:0.8b", help="Ollama model name")
     args = parser.parse_args()
 
     asyncio.run(run_benchmark(
         episodes_per_scenario=args.episodes,
         steps_per_episode=args.steps,
         output_path=args.output,
+        mock_llm=not args.live,
+        model_name=args.model,
     ))
 
 

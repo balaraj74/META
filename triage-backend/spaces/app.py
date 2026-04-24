@@ -457,7 +457,7 @@ def build_ui():
     ) as demo:
         gr.Markdown("""
 # 🏥 TRIAGE: Multi-Agent Hospital Crisis Simulation
-### GRPO-Trained Qwen3.5-0.8B · 8 Reward Verifiers · OpenEnv-Compatible RL Pipeline
+### GRPO-Trained Qwen3.5-4B · 8 Reward Verifiers · OpenEnv-Compatible RL Pipeline
 
 A **multi-agent AI system** where 6 specialized hospital agents coordinate in real-time to manage crisis scenarios.
 Each agent uses **GRPO-trained** clinical reasoning with 8 independent reward verifiers.

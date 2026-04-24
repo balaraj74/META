@@ -1,0 +1,122 @@
+[
+  {
+    "name": "Mass Casualty \u2014 High ICU Pressure",
+    "crisis_type": "mass_casualty",
+    "baseline_scores": {
+      "patient_survival": 0.9333,
+      "icu_efficiency": 0.65,
+      "violation_detection": 0.3333,
+      "format_compliance": 0.0,
+      "reasoning_quality": 0.0,
+      "response_speed": 1.0,
+      "no_hallucination": 0.5,
+      "action_alignment": 0.0,
+      "total": 0.4271
+    },
+    "trained_scores": {
+      "patient_survival": 0.9333,
+      "icu_efficiency": 0.65,
+      "violation_detection": 0.3333,
+      "format_compliance": 1.0,
+      "reasoning_quality": 0.9,
+      "response_speed": 1.0,
+      "no_hallucination": 1.0,
+      "action_alignment": 1.0,
+      "total": 0.8521
+    },
+    "improvement": 0.425,
+    "improvement_pct": 99.5,
+    "baseline_completion": "I think we should probably do something about the patients. There are many critical cases. Let me consider the options. ",
+    "trained_completion": "{\"action_type\": \"TRIAGE_PATIENT\", \"target_id\": 7, \"priority\": 1, \"reasoning\": \"P-007 (age 67, CRITICAL) is highest prior"
+  },
+  {
+    "name": "Equipment Failure \u2014 EHR Down",
+    "crisis_type": "equipment_failure",
+    "baseline_scores": {
+      "patient_survival": 1.0,
+      "icu_efficiency": 1.0,
+      "violation_detection": 0.25,
+      "format_compliance": 0.0,
+      "reasoning_quality": 0.0,
+      "response_speed": 1.0,
+      "no_hallucination": 0.5,
+      "action_alignment": 0.0,
+      "total": 0.4688
+    },
+    "trained_scores": {
+      "patient_survival": 1.0,
+      "icu_efficiency": 1.0,
+      "violation_detection": 0.25,
+      "format_compliance": 1.0,
+      "reasoning_quality": 0.9,
+      "response_speed": 1.0,
+      "no_hallucination": 0.0,
+      "action_alignment": 1.0,
+      "total": 0.7688
+    },
+    "improvement": 0.3,
+    "improvement_pct": 64.0,
+    "baseline_completion": "The equipment has failed. We should fix it. I recommend looking into the problem and finding a solution. The IT departme",
+    "trained_completion": "{\"action_type\": \"FLAG_POLICY_VIOLATION\", \"target_id\": 0, \"priority\": 1, \"reasoning\": \"4 violations injected, only 1 caug"
+  },
+  {
+    "name": "Staff Shortage \u2014 Night Shift Crisis",
+    "crisis_type": "staff_shortage",
+    "baseline_scores": {
+      "patient_survival": 0.9722,
+      "icu_efficiency": 1.0,
+      "violation_detection": 1.0,
+      "format_compliance": 0.0,
+      "reasoning_quality": 0.0,
+      "response_speed": 1.0,
+      "no_hallucination": 0.5,
+      "action_alignment": 0.0,
+      "total": 0.559
+    },
+    "trained_scores": {
+      "patient_survival": 0.9722,
+      "icu_efficiency": 1.0,
+      "violation_detection": 1.0,
+      "format_compliance": 1.0,
+      "reasoning_quality": 1.0,
+      "response_speed": 1.0,
+      "no_hallucination": 1.0,
+      "action_alignment": 1.0,
+      "total": 0.9965
+    },
+    "improvement": 0.4375,
+    "improvement_pct": 78.3,
+    "baseline_completion": "WAIT",
+    "trained_completion": "{\"action_type\": \"REQUEST_STAFF\", \"target_id\": 0, \"priority\": 1, \"reasoning\": \"Staff shortage crisis with 9 critical pati"
+  },
+  {
+    "name": "Outbreak \u2014 Isolation Protocol",
+    "crisis_type": "outbreak",
+    "baseline_scores": {
+      "patient_survival": 0.9615,
+      "icu_efficiency": 1.0,
+      "violation_detection": 0.0,
+      "format_compliance": 0.0,
+      "reasoning_quality": 0.0,
+      "response_speed": 1.0,
+      "no_hallucination": 0.5,
+      "action_alignment": 0.0,
+      "total": 0.4327
+    },
+    "trained_scores": {
+      "patient_survival": 0.9615,
+      "icu_efficiency": 1.0,
+      "violation_detection": 0.0,
+      "format_compliance": 1.0,
+      "reasoning_quality": 1.0,
+      "response_speed": 1.0,
+      "no_hallucination": 1.0,
+      "action_alignment": 1.0,
+      "total": 0.8702
+    },
+    "improvement": 0.4375,
+    "improvement_pct": 101.1,
+    "baseline_completion": "There is an outbreak happening. Patients need to be isolated. I suggest we follow standard protocols. More data needed.",
+    "trained_completion": "{\"action_type\": \"TRIAGE_PATIENT\", \"target_id\": 2, \"priority\": 1, \"reasoning\": \"P-002 (age 71, CRITICAL) highest isolatio"
+  }
+]

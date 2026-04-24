@@ -271,6 +271,7 @@ model.print_trainable_parameters()
 
 training_args = DPOConfig(
     output_dir=str(OUTPUT_DIR),
+    beta=0.1,
     per_device_train_batch_size=1,
     per_device_eval_batch_size=1,
     gradient_accumulation_steps=4,
@@ -280,7 +281,6 @@ training_args = DPOConfig(
     lr_scheduler_type="cosine",
     num_train_epochs=1,
     max_length=768,
-    max_prompt_length=384,
     logging_steps=10,
     eval_strategy="steps",
     eval_steps=50,
@@ -298,7 +298,6 @@ trainer_kwargs = {
     "model": model,
     "ref_model": None,
     "args": training_args,
-    "beta": 0.1,
     "train_dataset": train_dataset,
     "eval_dataset": eval_dataset,
     "max_length": 768,
@@ -312,7 +311,6 @@ try:
     )
 except TypeError:
     trainer = DPOTrainer(
-        tokenizer=tokenizer,
         **trainer_kwargs,
     )
 

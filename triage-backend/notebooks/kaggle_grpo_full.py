@@ -9,7 +9,7 @@ Compatible with Kaggle T4/P100 (no Unsloth needed)
 # ═══════════════════════════════════════════════════════════════
 # Cell 1: Install Dependencies
 # ═══════════════════════════════════════════════════════════════
-# !pip install -q git+https://github.com/huggingface/transformers.git "trl>=0.12" "peft>=0.13" "bitsandbytes>=0.44" "datasets>=3.0" "accelerate>=1.0" wandb huggingface_hub
+# !pip install -q git+https://github.com/huggingface/transformers.git "trl>=0.12" "peft>=0.13" "bitsandbytes>=0.46.1" "datasets>=3.0" "accelerate>=1.0" wandb huggingface_hub
 
 # ═══════════════════════════════════════════════════════════════
 # Cell 2: Imports + Config

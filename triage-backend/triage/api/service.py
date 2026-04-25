@@ -162,6 +162,54 @@ class BackendService:
         if result.drift_events:
             for drift_event in result.drift_events:
                 await self._broadcast("drift_event", {"episode_id": episode_id, "event": drift_event})
+
+        new_infections = [
+            event.to_dict()
+            for event in session.orchestrator.state.infection_events
+            if event.step == session.orchestrator.state.step_count
+        ]
+        for event in new_infections:
+            await self._broadcast(
+                "infection_spread",
+                {
+                    "event_id": event["event_id"],
+                    "source_patient": event["source_patient_id"],
+                    "infected_patient": event["infected_patient_id"],
+                    "ward": event["ward"],
+                    "pathogen": event["pathogen"],
+                    "prevented": event["prevented"],
+                    "step": event["step"],
+                },
+            )
+
+        dispatch_events = [
+            event for event in session.orchestrator.state.dispatch_events
+            if event.get("step") == session.orchestrator.state.step_count
+        ]
+        for event in dispatch_events:
+            if event.get("type") == "ambulance_dispatch":
+                await self._broadcast(
+                    "ambulance_dispatch",
+                    {
+                        "unit_id": event["unit_id"],
+                        "patient_id": event["patient_id"],
+                        "acuity": event["acuity"],
+                        "eta_steps": event["eta_steps"],
+                        "incident_type": event["incident_type"],
+                        "step": event["step"],
+                    },
+                )
+            elif event.get("type") == "patient_diverted":
+                await self._broadcast(
+                    "patient_diverted",
+                    {
+                        "patient_id": event["patient_id"],
+                        "acuity": event["acuity"],
+                        "reason": event["reason"],
+                        "total_diverted": event["total_diverted"],
+                        "step": event["step"],
+                    },
+                )
                 
         new_blocks = [b.to_dict() for b in session.orchestrator.state.safety_blocks if b.step == session.orchestrator.state.step_count]
         for block in new_blocks:
@@ -341,6 +389,51 @@ class BackendService:
         if session is None:
             return []
         return session.orchestrator.get_agent_messages(agent_type)
+
+    def get_infection_status(self) -> dict[str, Any]:
+        session = self.get_latest_episode()
+        if session is None:
+            return {
+                "ward_case_counts": {},
+                "lockdown_wards": [],
+                "isolated_patients": 0,
+                "total_infection_events": 0,
+                "prevention_rate": 0.0,
+            }
+        state = session.orchestrator.state
+        agent = session.orchestrator.agents.get(AgentType.INFECTION_CONTROL)
+        total = len(state.infection_events)
+        prevented = sum(1 for event in state.infection_events if event.prevented)
+        return {
+            "ward_case_counts": getattr(agent, "ward_case_counts", {}),
+            "lockdown_wards": sorted(getattr(agent, "lockdown_wards", set())),
+            "isolated_patients": len(getattr(agent, "isolated_patients", set())),
+            "total_infection_events": total,
+            "prevention_rate": prevented / total if total else 0.0,
+        }
+
+    def get_dispatch_status(self) -> dict[str, Any]:
+        session = self.get_latest_episode()
+        if session is None:
+            return {
+                "ambulances": [],
+                "incoming_patients": [],
+                "total_accepted": 0,
+                "total_diverted": 0,
+                "diversion_rate": 0.0,
+            }
+        state = session.orchestrator.state
+        agent = session.orchestrator.agents.get(AgentType.AMBULANCE_DISPATCH)
+        total_accepted = int(getattr(agent, "total_accepted", 0))
+        total_diverted = int(getattr(agent, "total_diverted", state.diverted_count))
+        total = total_accepted + total_diverted
+        return {
+            "ambulances": [ambulance.to_dict() for ambulance in state.ambulances],
+            "incoming_patients": [patient.to_dict() for patient in state.incoming_patients],
+            "total_accepted": total_accepted,
+            "total_diverted": total_diverted,
+            "diversion_rate": total_diverted / total if total else 0.0,
+        }
 
     def get_message_bus_stats(self) -> dict[str, Any]:
         session = self.get_latest_episode()

@@ -497,6 +497,268 @@ class TestEthicsCommittee:
         assert len(flags) > 0
         assert "CMO_OVERRIDE_REJECTED" in getattr(flags[0], "violation_summary", "")
 
+
+class TestInfectionControl:
+    """Tests for the Infection Control agent."""
+
+    def _agent(self):
+        from triage.agents.message_bus import MessageBus
+        from triage.agents.specialized import InfectionControlAgent
+
+        config = {
+            "pathogens": [
+                {"name": "influenza", "isolation": "droplet", "spread_rate": 0.3},
+                {"name": "tuberculosis", "isolation": "airborne", "spread_rate": 0.15},
+                {"name": "norovirus", "isolation": "contact", "spread_rate": 0.4},
+                {"name": "unknown_pathogen", "isolation": "full_isolation", "spread_rate": 0.5},
+            ],
+            "spread_threshold": 3,
+            "ppe_compliance_rate": 0.85,
+        }
+        return InfectionControlAgent(config=config, bus=MessageBus(), mock_llm=True)
+
+    async def _state(self, crisis_type: str = "outbreak"):
+        from triage.env.hospital_env import HospitalEnv
+
+        env = HospitalEnv(seed=42, max_steps=20)
+        await env.reset({"crisis_type": crisis_type})
+        return env.state
+
+    @pytest.mark.asyncio
+    async def test_infection_detects_spread(self) -> None:
+        from triage.env.state import Patient, PatientStatus, WardType
+
+        state = await self._state("outbreak")
+        state.patients = [
+            Patient(id="p1", name="A", age=30, condition="unknown_pathogen infection", status=PatientStatus.SERIOUS, ward=WardType.WARD_A),
+            Patient(id="p2", name="B", age=31, condition="unknown_pathogen infection", status=PatientStatus.SERIOUS, ward=WardType.WARD_A),
+        ]
+        self._agent()._rule_based_decision(state, [])
+        assert len(state.infection_events) >= 2
+
+    @pytest.mark.asyncio
+    async def test_infection_isolates_patient(self) -> None:
+        from triage.agents.tools import AssignTreatmentTool
+        from triage.env.state import Patient, PatientStatus, WardType
+
+        state = await self._state("outbreak")
+        state.patients = [
+            Patient(id="p1", name="A", age=30, condition="unknown_pathogen infection", status=PatientStatus.SERIOUS, ward=WardType.WARD_A),
+        ]
+        actions = self._agent()._rule_based_decision(state, [])
+        assert any(
+            isinstance(action, AssignTreatmentTool) and "ISOLATION_ORDER" in action.treatment_plan
+            for action in actions
+        )
+
+    @pytest.mark.asyncio
+    async def test_infection_recommends_lockdown(self) -> None:
+        from triage.agents.tools import EscalateToCMOTool
+        from triage.env.state import Patient, PatientStatus, WardType
+
+        state = await self._state("outbreak")
+        state.patients = [
+            Patient(id=f"p{i}", name=f"P{i}", age=30, condition="unknown_pathogen infection", status=PatientStatus.SERIOUS, ward=WardType.WARD_A)
+            for i in range(3)
+        ]
+        actions = self._agent()._rule_based_decision(state, [])
+        assert any(
+            isinstance(action, EscalateToCMOTool) and "LOCKDOWN_RECOMMENDED" in action.summary
+            for action in actions
+        )
+
+    @pytest.mark.asyncio
+    async def test_infection_flags_breach(self) -> None:
+        from triage.agents.tools import FlagPolicyViolationTool
+        from triage.env.state import Patient, PatientStatus, WardType
+
+        state = await self._state("outbreak")
+        state.ward_lockdowns["WARD"] = True
+        state.patients = [
+            Patient(id="p1", name="A", age=30, condition="unknown_pathogen infection", status=PatientStatus.SERIOUS, ward=WardType.WARD_A),
+        ]
+        actions = self._agent()._rule_based_decision(state, [])
+        assert any(
+            isinstance(action, FlagPolicyViolationTool) and "ISOLATION_BREACH" in action.description
+            for action in actions
+        )
+
+    @pytest.mark.asyncio
+    async def test_infection_skips_non_outbreak(self) -> None:
+        from triage.agents.tools import AssignTreatmentTool, SendMessageTool
+        from triage.env.state import Patient, PatientStatus, WardType
+
+        state = await self._state("mass_casualty")
+        state.step_count = 3
+        state.patients = [
+            Patient(id="p1", name="A", age=30, condition="unknown_pathogen infection", status=PatientStatus.SERIOUS, ward=WardType.WARD_A),
+        ]
+        actions = self._agent()._rule_based_decision(state, [])
+        assert any(isinstance(action, SendMessageTool) and "PPE_AUDIT" in action.content for action in actions)
+        assert not any(isinstance(action, AssignTreatmentTool) for action in actions)
+        assert state.infection_events == []
+
+    @pytest.mark.asyncio
+    async def test_spread_simulation(self) -> None:
+        from triage.env.state import Patient, PatientStatus, WardType
+
+        state = await self._state("outbreak")
+        state.patients = [
+            Patient(id="p1", name="A", age=30, condition="unknown_pathogen infection", status=PatientStatus.SERIOUS, ward=WardType.WARD_A),
+            Patient(id="p2", name="B", age=31, condition="observation", status=PatientStatus.STABLE, ward=WardType.WARD_A),
+        ]
+        agent = self._agent()
+        agent.pathogen_db["unknown_pathogen"]["spread_rate"] = 1.0
+        agent.ppe_compliance_rate = 0.0
+        agent._rule_based_decision(state, [])
+        assert agent.exposure_log
+        assert any(event.infected_patient_id == "p2" for event in state.infection_events)
+
+
+class TestAmbulanceDispatch:
+    """Tests for the Ambulance Dispatch agent."""
+
+    def _agent(self):
+        from triage.agents.message_bus import MessageBus
+        from triage.agents.specialized import AmbulanceDispatchAgent
+
+        config = {
+            "num_ambulances": 5,
+            "base_eta_steps": 3,
+            "diversion_threshold": 0.90,
+            "mass_casualty_surge": 8,
+        }
+        return AmbulanceDispatchAgent(config=config, bus=MessageBus(), mock_llm=True)
+
+    async def _state(self, crisis_type: str = "mass_casualty"):
+        from triage.env.hospital_env import HospitalEnv
+
+        env = HospitalEnv(seed=42, max_steps=20)
+        await env.reset({"crisis_type": crisis_type})
+        return env.state
+
+    def _incident(self, patient_id: str, acuity: int, incident_type: str = "trauma"):
+        from triage.env.state import IncomingPatient
+
+        return IncomingPatient(
+            patient_id=patient_id,
+            acuity_estimate=acuity,
+            incident_type=incident_type,
+            eta_steps=3,
+            ambulance_id="",
+        )
+
+    @pytest.mark.asyncio
+    async def test_dispatch_accepts_patient(self) -> None:
+        from triage.env.state import AmbulanceStatus
+
+        state = await self._state("outbreak")
+        state.resources.icu_beds_total = 10
+        state.resources.icu_beds_occupied = 7
+        agent = self._agent()
+        agent._generate_incident = lambda _state: self._incident("amb-p1", 6)
+        agent._rule_based_decision(state, [])
+        assert any(ambulance.status == AmbulanceStatus.EN_ROUTE for ambulance in state.ambulances)
+        assert any(patient.patient_id == "amb-p1" for patient in state.incoming_patients)
+
+    @pytest.mark.asyncio
+    async def test_dispatch_diverts_high_acuity(self) -> None:
+        from triage.env.state import AmbulanceStatus
+
+        state = await self._state("outbreak")
+        state.resources.icu_beds_total = 100
+        state.resources.icu_beds_occupied = 92
+        agent = self._agent()
+        agent._generate_incident = lambda _state: self._incident("amb-p2", 8)
+        agent._rule_based_decision(state, [])
+        assert state.diverted_count == 1
+        assert not any(ambulance.status == AmbulanceStatus.EN_ROUTE for ambulance in state.ambulances)
+
+    @pytest.mark.asyncio
+    async def test_dispatch_prealert_sent(self) -> None:
+        from triage.agents.tools import SendMessageTool
+
+        state = await self._state("outbreak")
+        state.resources.icu_beds_total = 10
+        state.resources.icu_beds_occupied = 7
+        agent = self._agent()
+        agent._generate_incident = lambda _state: self._incident("amb-p3", 7, "cardiac")
+        actions = agent._rule_based_decision(state, [])
+        assert any(isinstance(action, SendMessageTool) and "PRE-ALERT" in action.content for action in actions)
+        assert state.incoming_patients[0].pre_alert_sent is True
+
+    @pytest.mark.asyncio
+    async def test_dispatch_eta_countdown(self) -> None:
+        from triage.env.state import AmbulanceStatus
+
+        state = await self._state("outbreak")
+        state.ambulances[0].status = AmbulanceStatus.EN_ROUTE
+        state.ambulances[0].patient_id = "amb-p4"
+        state.ambulances[0].eta_steps = 3
+        state.ambulances[0].acuity_estimate = 6
+        state.ambulances[0].incident_type = "respiratory"
+        state.incoming_patients.append(self._incident("amb-p4", 6, "respiratory"))
+        state.incoming_patients[0].ambulance_id = state.ambulances[0].unit_id
+        agent = self._agent()
+        agent._last_generation_step = state.step_count
+        for _ in range(3):
+            agent._rule_based_decision(state, [])
+        assert any(patient.id == "amb-p4" for patient in state.patients)
+        assert state.ambulances[0].status == AmbulanceStatus.RETURNING
+
+    @pytest.mark.asyncio
+    async def test_dispatch_mass_casualty_surge(self) -> None:
+        from triage.agents.tools import ActivateProtocolTool
+        from triage.env.state import AmbulanceStatus
+
+        state = await self._state("mass_casualty")
+        state.incoming_patients = []
+        for ambulance in state.ambulances:
+            ambulance.status = AmbulanceStatus.AVAILABLE
+            ambulance.patient_id = None
+            ambulance.eta_steps = 0
+        agent = self._agent()
+        agent._generate_incident = lambda _state: self._incident("amb-surge", 6)
+        actions = agent._rule_based_decision(state, [])
+        assert any(isinstance(action, ActivateProtocolTool) and action.protocol_name == "MASS_CASUALTY_SURGE" for action in actions)
+        assert all(ambulance.status == AmbulanceStatus.EN_ROUTE for ambulance in state.ambulances)
+
+    @pytest.mark.asyncio
+    async def test_dispatch_mutual_aid(self) -> None:
+        from triage.agents.tools import EscalateToCMOTool
+        from triage.env.state import AmbulanceStatus
+
+        state = await self._state("mass_casualty")
+        state.incoming_patients = []
+        state.resources.icu_beds_total = 10
+        state.resources.icu_beds_occupied = 10
+        for ambulance in state.ambulances:
+            ambulance.status = AmbulanceStatus.AVAILABLE
+            ambulance.patient_id = None
+            ambulance.eta_steps = 0
+        agent = self._agent()
+        agent._generate_incident = lambda _state: self._incident("amb-divert", 9)
+        actions = agent._rule_based_decision(state, [])
+        assert state.diverted_count >= 3
+        assert any(isinstance(action, EscalateToCMOTool) and "MUTUAL_AID_REQUEST" in action.summary for action in actions)
+
+    def test_dispatch_runs_first(self) -> None:
+        from triage.agents.orchestrator import AGENT_STEP_ORDER
+        from triage.env.state import AgentType
+
+        assert AGENT_STEP_ORDER[0] == AgentType.AMBULANCE_DISPATCH
+
+    @pytest.mark.asyncio
+    async def test_offline_ambulances_staff_shortage(self) -> None:
+        from triage.env.state import AmbulanceStatus
+
+        state = await self._state("staff_shortage")
+        available = [ambulance for ambulance in state.ambulances if ambulance.status == AmbulanceStatus.AVAILABLE]
+        offline = [ambulance for ambulance in state.ambulances if ambulance.status == AmbulanceStatus.OFFLINE]
+        assert len(available) == 3
+        assert len(offline) == 2
+
+
 class TestSafetyConstitution:
     """Tests for the Clinical Safety Constitution layer."""
 

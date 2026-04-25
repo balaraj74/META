@@ -105,6 +105,7 @@ from triage.env.state import AgentType
 AGENT_TOOLS = {
     AgentType.CMO_OVERSIGHT: [EscalateToCMOTool, FlagPolicyViolationTool, OverrideDecisionTool, SendMessageTool, UpdateEHRTool],
     AgentType.ER_TRIAGE: [TriagePatientTool, TransferToICUTool, TransferToWardTool, RequestSpecialistTool, SendMessageTool, UpdateEHRTool],
+    AgentType.INFECTION_CONTROL: [SendMessageTool, EscalateToCMOTool, FlagPolicyViolationTool, AssignTreatmentTool, ActivateProtocolTool],
     AgentType.ICU_MANAGEMENT: [TransferToICUTool, AssignTreatmentTool, RequestBloodTool, TransferToWardTool, SendMessageTool, UpdateEHRTool],
     AgentType.PHARMACY: [OrderMedicationTool, FlagPolicyViolationTool, SendMessageTool, UpdateEHRTool],
     AgentType.HR_ROSTERING: [RequestStaffTool, SendMessageTool, FlagPolicyViolationTool, UpdateEHRTool],

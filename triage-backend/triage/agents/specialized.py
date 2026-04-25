@@ -13,7 +13,10 @@ Agent Hierarchy:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import random
+import uuid
 from typing import Any
 
 from pydantic import BaseModel
@@ -25,12 +28,19 @@ from triage.env.state import (
     AgentAction,
     AgentMessage,
     AgentType,
+    AmbulanceStatus,
+    CrisisType,
     EnvironmentState,
+    InfectionEvent,
+    IncomingPatient,
+    IsolationStatus,
     MessageType,
+    Patient,
     PatientStatus,
+    WardType,
 )
 from triage.agents.tools import (
-    OverrideDecisionTool, ActivateOverflowTool, AssignTreatmentTool,
+    OverrideDecisionTool, ActivateOverflowTool, ActivateProtocolTool, AssignTreatmentTool,
     TriagePatientTool, TransferToICUTool, OrderMedicationTool,
     RequestStaffTool, FlagPolicyViolationTool, UpdateEHRTool, VerifyInsuranceTool,
     EscalateToCMOTool, SendMessageTool, TransferToWardTool, RequestSpecialistTool
@@ -62,6 +72,320 @@ def _focus_note(focus: str, signals: dict[str, float]) -> str:
     )
 
 
+def _json_safe_default(value: Any) -> Any:
+    if hasattr(value, "to_dict"):
+        return value.to_dict()
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    if hasattr(value, "value"):
+        return value.value
+    return str(value)
+
+
+# ─── Ambulance Dispatch Agent ────────────────────────────────
+
+class AmbulanceDispatchAgent(BaseAgent):
+    """Ambulance dispatch coordinator controlling patient inflow."""
+
+    INCIDENT_TYPES = ("trauma", "cardiac", "respiratory")
+
+    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True, model_name: str | None = None) -> None:
+        super().__init__(AgentType.AMBULANCE_DISPATCH, config, bus, mock_llm, model_name)
+        self.NUM_AMBULANCES: int = int(config.get("num_ambulances", 5))
+        self.BASE_ETA: int = int(config.get("base_eta_steps", 3))
+        self.DIVERSION_THRESHOLD: float = float(config.get("diversion_threshold", 0.90))
+        self.dispatch_log: list[dict] = []
+        self.total_diverted: int = 0
+        self.total_accepted: int = 0
+        self._rng = random.Random(config.get("seed", 23))
+        self._last_generation_step: int | None = None
+
+    async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
+        if self.mock_llm:
+            return self._rule_based_decision(state, inbox)
+        context = self._build_state_context(state)
+        dispatch_context = json.dumps(
+            {
+                "ambulances": [ambulance.to_dict() for ambulance in state.ambulances],
+                "incoming_patients": [patient.to_dict() for patient in state.incoming_patients],
+                "icu_utilization": state.icu_occupancy,
+                "diverted_count": state.diverted_count,
+            }
+        )
+        raw = await self._call_llm(
+            self.config.get("system_prompt", "Manage ambulance dispatch."),
+            f"{context}\nAmbulance Dispatch Context:\n{dispatch_context}",
+        )
+        parsed = self._parse_llm_response(raw)
+        return parsed or self._rule_based_decision(state, inbox)
+
+    def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
+        actions: list[BaseModel] = []
+        actions.extend(self._advance_etas(state))
+
+        active_threshold = 0.95 if state.crisis.type == CrisisType.MASS_CASUALTY and state.step_count < 5 else self.DIVERSION_THRESHOLD
+        if state.crisis.type == CrisisType.MASS_CASUALTY and state.step_count < 5:
+            actions.append(ActivateProtocolTool(
+                protocol_name="MASS_CASUALTY_SURGE",
+                justification="MASS_CASUALTY_SURGE: Dispatch all available ambulances and accept critical surge arrivals.",
+            ))
+            for _ in range(len(self._available_ambulances(state))):
+                incident = self._generate_incident(state)
+                action = self._handle_incident(state, incident, active_threshold, prealert_min_acuity=7)
+                if action:
+                    actions.extend(action)
+            actions.extend(self._mutual_aid_actions(state))
+            return actions[:16]
+
+        if self._should_generate_incidents(state):
+            for _ in range(self._incident_count(state)):
+                incident = self._generate_incident(state)
+                action = self._handle_incident(state, incident, active_threshold, prealert_min_acuity=7)
+                if action:
+                    actions.extend(action)
+
+        actions.extend(self._mutual_aid_actions(state))
+        return actions[:12]
+
+    def _advance_etas(self, state: EnvironmentState) -> list[BaseModel]:
+        actions: list[BaseModel] = []
+        arrived_ids: set[str] = set()
+        for ambulance in state.ambulances:
+            if ambulance.status != AmbulanceStatus.EN_ROUTE:
+                continue
+            ambulance.eta_steps = max(0, ambulance.eta_steps - 1)
+            incoming = self._incoming_for_ambulance(state, ambulance.unit_id)
+            if incoming:
+                incoming.eta_steps = ambulance.eta_steps
+            if ambulance.eta_steps == 0 and incoming:
+                patient = self._incoming_to_patient(incoming)
+                state.patients.append(patient)
+                arrived_ids.add(incoming.patient_id)
+                ambulance.status = AmbulanceStatus.RETURNING
+                ambulance.patient_id = None
+                ambulance.acuity_estimate = 0
+                ambulance.incident_type = ""
+                message = (
+                    f"PATIENT_ARRIVING: {incoming.incident_type} patient (acuity={incoming.acuity_estimate}) "
+                    f"arriving now. Ambulance {incoming.ambulance_id} at ER bay. "
+                    f"Patient ID: {incoming.patient_id}"
+                )
+                actions.append(SendMessageTool(to_agent=AgentType.ER_TRIAGE.value, content=message, urgency=8))
+                if incoming.acuity_estimate >= 8:
+                    actions.append(SendMessageTool(to_agent=AgentType.ICU_MANAGEMENT.value, content=message, urgency=8))
+                    actions.append(SendMessageTool(to_agent=AgentType.CMO_OVERSIGHT.value, content=message, urgency=8))
+        if arrived_ids:
+            state.incoming_patients = [
+                patient for patient in state.incoming_patients
+                if patient.patient_id not in arrived_ids
+            ]
+        return actions
+
+    def _handle_incident(
+        self,
+        state: EnvironmentState,
+        incident: IncomingPatient,
+        diversion_threshold: float,
+        prealert_min_acuity: int,
+    ) -> list[BaseModel]:
+        actions: list[BaseModel] = []
+        util = state.icu_occupancy
+        if util > diversion_threshold and incident.acuity_estimate >= 7:
+            self.total_diverted += 1
+            state.diverted_count += 1
+            self.dispatch_log.append({
+                "step": state.step_count,
+                "event": "diverted",
+                "patient_id": incident.patient_id,
+                "acuity": incident.acuity_estimate,
+                "incident_type": incident.incident_type,
+            })
+            state.dispatch_events.append({
+                "type": "patient_diverted",
+                "patient_id": incident.patient_id,
+                "acuity": incident.acuity_estimate,
+                "reason": f"ICU at {util:.0%} capacity",
+                "total_diverted": self.total_diverted,
+                "step": state.step_count,
+            })
+            actions.append(SendMessageTool(
+                to_agent=AgentType.CMO_OVERSIGHT.value,
+                content=(
+                    f"DIVERSION: High-acuity patient (acuity={incident.acuity_estimate}) diverted "
+                    f"to St. Mary's Hospital — ICU at {util:.0%} capacity. "
+                    f"Total diverted this episode: {self.total_diverted}"
+                ),
+                urgency=9,
+            ))
+            return actions
+
+        ambulance = self._nearest_available_ambulance(state)
+        if ambulance is None:
+            actions.append(FlagPolicyViolationTool(
+                violation_type="AMBULANCE_UNAVAILABLE",
+                description="AMBULANCE_UNAVAILABLE: No operational ambulance available for accepted incident.",
+                affected_patient_id=incident.patient_id,
+            ))
+            return actions
+
+        incident.ambulance_id = ambulance.unit_id
+        incident.eta_steps = self.BASE_ETA
+        ambulance.status = AmbulanceStatus.EN_ROUTE
+        ambulance.patient_id = incident.patient_id
+        ambulance.eta_steps = self.BASE_ETA
+        ambulance.acuity_estimate = incident.acuity_estimate
+        ambulance.incident_type = incident.incident_type
+        state.incoming_patients.append(incident)
+        self.total_accepted += 1
+        self.dispatch_log.append({
+            "step": state.step_count,
+            "event": "accepted",
+            "unit_id": ambulance.unit_id,
+            "patient_id": incident.patient_id,
+            "acuity": incident.acuity_estimate,
+            "eta_steps": incident.eta_steps,
+            "incident_type": incident.incident_type,
+        })
+        state.dispatch_events.append({
+            "type": "ambulance_dispatch",
+            "unit_id": ambulance.unit_id,
+            "patient_id": incident.patient_id,
+            "acuity": incident.acuity_estimate,
+            "eta_steps": incident.eta_steps,
+            "incident_type": incident.incident_type,
+            "step": state.step_count,
+        })
+
+        if incident.acuity_estimate >= prealert_min_acuity:
+            incident.pre_alert_sent = True
+            actions.append(SendMessageTool(
+                to_agent=AgentType.ER_TRIAGE.value,
+                content=(
+                    f"PRE-ALERT: {incident.incident_type} patient inbound ETA {incident.eta_steps} steps. "
+                    f"Estimated acuity {incident.acuity_estimate}. Prepare {self._required_resources(incident.incident_type)}."
+                ),
+                urgency=8,
+            ))
+        return actions
+
+    def _should_generate_incidents(self, state: EnvironmentState) -> bool:
+        if self._last_generation_step == state.step_count:
+            return False
+        interval = 5 if state.crisis.type == CrisisType.STAFF_SHORTAGE else 3
+        should_generate = state.step_count % interval == 0
+        if should_generate:
+            self._last_generation_step = state.step_count
+        return should_generate
+
+    def _incident_count(self, state: EnvironmentState) -> int:
+        if state.crisis.type == CrisisType.MASS_CASUALTY:
+            return self._rng.randint(2, 4)
+        return 1
+
+    def _generate_incident(self, state: EnvironmentState) -> IncomingPatient:
+        if state.crisis.type == CrisisType.MASS_CASUALTY:
+            acuity = self._rng.randint(6, 10)
+        elif state.crisis.type == CrisisType.STAFF_SHORTAGE:
+            acuity = self._rng.randint(3, 8)
+        else:
+            acuity = self._rng.randint(2, 9)
+        incident_type = self._rng.choice(self.INCIDENT_TYPES)
+        return IncomingPatient(
+            patient_id=f"AMB-P-{state.episode}-{state.step_count}-{uuid.uuid4().hex[:6]}",
+            acuity_estimate=acuity,
+            incident_type=incident_type,
+            eta_steps=self.BASE_ETA,
+            ambulance_id="",
+        )
+
+    def _mutual_aid_actions(self, state: EnvironmentState) -> list[BaseModel]:
+        recent_diversions = [
+            item for item in self.dispatch_log
+            if item.get("event") == "diverted" and state.step_count - int(item.get("step", 0)) <= 5
+        ]
+        if len(recent_diversions) < 3:
+            return []
+        if any(item.get("event") == "mutual_aid" and state.step_count - int(item.get("step", 0)) <= 5 for item in self.dispatch_log):
+            return []
+        self.dispatch_log.append({"step": state.step_count, "event": "mutual_aid"})
+        state.dispatch_events.append({
+            "type": "mutual_aid_requested",
+            "step": state.step_count,
+            "total_diverted": len(recent_diversions),
+        })
+        return [EscalateToCMOTool(
+            patient_id=None,
+            urgency=9,
+            summary=(
+                f"MUTUAL_AID_REQUEST: {len(recent_diversions)} patients diverted "
+                "in last 5 steps. Hospital approaching saturation. "
+                "Recommend activating OVERFLOW protocol."
+            ),
+        )]
+
+    def _parse_llm_response(self, raw: Any) -> list[BaseModel]:
+        response = raw if isinstance(raw, dict) else {}
+        actions: list[BaseModel] = []
+        for item in response.get("actions", []):
+            action_type = str(item.get("action_type", "")).upper()
+            if action_type == "SEND_MESSAGE":
+                actions.append(SendMessageTool(
+                    to_agent=str(item.get("to_agent", AgentType.ER_TRIAGE.value)),
+                    content=str(item.get("content", "")),
+                    urgency=int(item.get("urgency", 7)),
+                ))
+            elif action_type == "ESCALATE_TO_CMO":
+                actions.append(EscalateToCMOTool(
+                    patient_id=item.get("patient_id"),
+                    urgency=int(item.get("urgency", 8)),
+                    summary=str(item.get("summary", "")),
+                ))
+            elif action_type == "ACTIVATE_PROTOCOL":
+                actions.append(ActivateProtocolTool(
+                    protocol_name=str(item.get("protocol_name", "MASS_CASUALTY_SURGE")),
+                    justification=str(item.get("justification", "")),
+                ))
+        return actions
+
+    def _available_ambulances(self, state: EnvironmentState) -> list[Any]:
+        return [ambulance for ambulance in state.ambulances if ambulance.status == AmbulanceStatus.AVAILABLE]
+
+    def _nearest_available_ambulance(self, state: EnvironmentState) -> Any:
+        ambulances = self._available_ambulances(state)
+        return sorted(ambulances, key=lambda ambulance: ambulance.unit_id)[0] if ambulances else None
+
+    def _incoming_for_ambulance(self, state: EnvironmentState, ambulance_id: str) -> IncomingPatient | None:
+        for patient in state.incoming_patients:
+            if patient.ambulance_id == ambulance_id:
+                return patient
+        return None
+
+    def _incoming_to_patient(self, incoming: IncomingPatient) -> Patient:
+        patient = Patient(
+            id=incoming.patient_id,
+            name=f"Ambulance {incoming.patient_id}",
+            age=40,
+            condition=f"{incoming.incident_type} ambulance arrival",
+            status=PatientStatus.INCOMING,
+            ward=WardType.TRIAGE,
+            triage_score=incoming.acuity_estimate,
+            icu_required=incoming.acuity_estimate >= 8,
+        )
+        patient.add_event(
+            "AMBULANCE_ARRIVAL",
+            f"Arrived by {incoming.ambulance_id}; pre_alert_sent={incoming.pre_alert_sent}",
+            AgentType.AMBULANCE_DISPATCH,
+        )
+        return patient
+
+    def _required_resources(self, incident_type: str) -> str:
+        return {
+            "trauma": "trauma bay + O- blood",
+            "cardiac": "crash cart + cardiology consult",
+            "respiratory": "ventilator on standby",
+        }.get(incident_type, "ER bay + triage nurse")
+
+
 # ─── CMO Oversight Agent ────────────────────────────────────
 
 class CMOOversightAgent(BaseAgent):
@@ -83,6 +407,21 @@ class CMOOversightAgent(BaseAgent):
         prompt = self._build_cmo_prompt(state, inbox)
         response = await self._call_llm(prompt, context)
         return self._parse_actions(response, state)
+
+    def _parse_actions(self, response: dict[str, Any], state: EnvironmentState) -> list[AgentAction]:
+        actions = []
+        for a in response.get("actions", []):
+            try:
+                actions.append(AgentAction(
+                    agent_type=self.agent_type,
+                    action_type=ActionType[a.get("action_type", "OVERRIDE_DECISION")],
+                    target_id=int(a.get("target_id", 0)),
+                    priority=int(a.get("priority", 5)),
+                    reasoning=a.get("reasoning", ""),
+                ))
+            except (KeyError, ValueError):
+                continue
+        return actions
 
     def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
         actions: list[AgentAction] = []
@@ -229,6 +568,250 @@ class ERTriageAgent(BaseAgent):
 
 # ─── ICU Management Agent ───────────────────────────────────
 
+class InfectionControlAgent(BaseAgent):
+    """Infection control officer for outbreak containment."""
+
+    WARDS = ["ER", "ICU", "WARD", "ISOLATION"]
+
+    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True, model_name: str | None = None) -> None:
+        super().__init__(AgentType.INFECTION_CONTROL, config, bus, mock_llm, model_name)
+        pathogens = config.get("pathogens", [])
+        self.pathogen_db: dict[str, dict[str, Any]] = {
+            item.get("name", "unknown_pathogen"): item for item in pathogens
+        } or {
+            "unknown_pathogen": {
+                "name": "unknown_pathogen",
+                "isolation": IsolationStatus.FULL.value,
+                "spread_rate": 0.5,
+            }
+        }
+        self.ward_case_counts: dict[str, int] = {ward: 0 for ward in self.WARDS}
+        self.isolated_patients: set[str] = set()
+        self.lockdown_wards: set[str] = set()
+        self.exposure_log: list[dict[str, Any]] = []
+        self.SPREAD_THRESHOLD = int(config.get("spread_threshold", 3))
+        self.ppe_compliance_rate = float(config.get("ppe_compliance_rate", 0.85))
+        self._rng = random.Random(config.get("seed", 17))
+
+    async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
+        if self.mock_llm:
+            return self._rule_based_decision(state, inbox)
+        context = self._build_state_context(state)
+        infection_context = json.dumps(
+            {
+                "ward_case_counts": self.ward_case_counts,
+                "isolated_patients": sorted(self.isolated_patients),
+                "active_pathogens": state.active_pathogens,
+            }
+        )
+        raw = await self._call_llm(
+            self.config.get("system_prompt", "Manage infection control."),
+            f"{context}\nInfection Control Context:\n{infection_context}",
+        )
+        parsed = self._parse_llm_response(raw)
+        return parsed or self._rule_based_decision(state, inbox)
+
+    def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
+        actions: list[BaseModel] = []
+
+        if state.crisis.type == CrisisType.OUTBREAK:
+            newly_infected = self._detect_new_spread(state)
+            for patient in newly_infected:
+                pathogen = self._patient_pathogen(patient, state)
+                isolation_level = self._isolation_for(pathogen)
+                if patient.id not in self.isolated_patients:
+                    treatment = f"ISOLATION_ORDER:{isolation_level}"
+                    if treatment not in patient.treatment_plan:
+                        patient.treatment_plan.append(treatment)
+                    self.isolated_patients.add(patient.id)
+                    actions.append(AssignTreatmentTool(
+                        patient_id=patient.id,
+                        treatment_plan=treatment,
+                        reasoning=f"ISOLATION_ORDER:{isolation_level} for {pathogen}",
+                    ))
+                    message = (
+                        f"ISOLATION_ORDER: Patient {patient.id} requires {isolation_level} "
+                        f"isolation for {pathogen}. Move to isolation ward immediately."
+                    )
+                    actions.append(SendMessageTool(to_agent=AgentType.ER_TRIAGE.value, content=message, urgency=8))
+                    actions.append(SendMessageTool(to_agent=AgentType.ICU_MANAGEMENT.value, content=message, urgency=8))
+
+            for ward, count in self.ward_case_counts.items():
+                if count >= self.SPREAD_THRESHOLD and ward not in self.lockdown_wards:
+                    pathogen = self._active_pathogen(state)
+                    summary = (
+                        f"LOCKDOWN_RECOMMENDED: {ward} has {count} confirmed cases "
+                        f"of {pathogen}. Recommend immediate lockdown and patient transfer freeze."
+                    )
+                    self.lockdown_wards.add(ward)
+                    state.ward_lockdowns[ward] = True
+                    actions.append(EscalateToCMOTool(patient_id=None, urgency=9, summary=summary))
+
+            for event in state.infection_events:
+                if event.step == state.step_count and state.ward_lockdowns.get(event.ward) and not event.prevented:
+                    actions.append(FlagPolicyViolationTool(
+                        violation_type="ISOLATION_BREACH",
+                        description=(
+                            f"ISOLATION_BREACH: New case in locked-down {event.ward}. "
+                            "PPE failure or unauthorized entry suspected."
+                        ),
+                        affected_patient_id=event.infected_patient_id,
+                    ))
+
+            self._simulate_spread(state)
+
+        if state.step_count % 3 == 0:
+            active_wards = [ward for ward, count in self.ward_case_counts.items() if count > 0]
+            isolation_level = self._isolation_for(self._active_pathogen(state))
+            actions.append(SendMessageTool(
+                to_agent=AgentType.HR_ROSTERING.value,
+                content=(
+                    f"PPE_AUDIT: Current compliance rate {self.ppe_compliance_rate * 100:.0f}%. "
+                    f"All staff in {active_wards or ['ALL']} require {isolation_level} PPE. "
+                    "Non-compliant staff must be reassigned."
+                ),
+                urgency=6,
+            ))
+
+        return actions[:12]
+
+    def _detect_new_spread(self, state: EnvironmentState) -> list[Any]:
+        newly_infected: list[Any] = []
+        for ward in self.WARDS:
+            patients = [
+                p for p in state.patients
+                if self._ward_key(p.ward.value) == ward and self._is_infectious(p, state)
+            ]
+            count = len(patients)
+            previous = self.ward_case_counts.get(ward, 0)
+            if count > previous:
+                for patient in patients[previous:count]:
+                    state.infection_events.append(InfectionEvent(
+                        event_id=str(uuid.uuid4()),
+                        step=state.step_count,
+                        source_patient_id=self._source_patient_id(state, ward, patient.id),
+                        infected_patient_id=patient.id,
+                        ward=ward,
+                        pathogen=self._patient_pathogen(patient, state),
+                    ))
+                    newly_infected.append(patient)
+            self.ward_case_counts[ward] = count
+        return newly_infected
+
+    def _simulate_spread(self, state: EnvironmentState) -> None:
+        pathogen = self._active_pathogen(state)
+        spread_rate = float(self.pathogen_db.get(pathogen, {}).get("spread_rate", 0.5))
+        effective_rate = spread_rate * (1.0 - self.ppe_compliance_rate)
+        for ward in self.WARDS:
+            infectious = [
+                p for p in state.patients
+                if self._ward_key(p.ward.value) == ward and self._is_infectious(p, state)
+            ]
+            if not infectious:
+                continue
+            for patient in state.patients:
+                if self._ward_key(patient.ward.value) != ward:
+                    continue
+                if patient.id in self.isolated_patients or self._is_infectious(patient, state):
+                    continue
+                roll = self._rng.random()
+                self.exposure_log.append({
+                    "step": state.step_count,
+                    "ward": ward,
+                    "patient_id": patient.id,
+                    "pathogen": pathogen,
+                    "roll": roll,
+                    "threshold": effective_rate,
+                })
+                if roll < effective_rate:
+                    patient.condition = f"{pathogen} exposure"
+                    if patient.status == PatientStatus.STABLE:
+                        patient.status = PatientStatus.SERIOUS
+                    state.infection_events.append(InfectionEvent(
+                        event_id=str(uuid.uuid4()),
+                        step=state.step_count,
+                        source_patient_id=infectious[0].id,
+                        infected_patient_id=patient.id,
+                        ward=ward,
+                        pathogen=pathogen,
+                    ))
+                    self.ward_case_counts[ward] = self.ward_case_counts.get(ward, 0) + 1
+
+    def _parse_llm_response(self, raw: Any) -> list[BaseModel]:
+        response = raw if isinstance(raw, dict) else {}
+        actions: list[BaseModel] = []
+        for item in response.get("actions", []):
+            try:
+                action_type = str(item.get("action_type", "")).upper()
+                if action_type == "ASSIGN_TREATMENT":
+                    actions.append(AssignTreatmentTool(
+                        patient_id=str(item["patient_id"]),
+                        treatment_plan=str(item.get("treatment_plan", "ISOLATION_ORDER:full_isolation")),
+                        reasoning=str(item.get("reasoning", "Infection control isolation order")),
+                    ))
+                elif action_type == "SEND_MESSAGE":
+                    actions.append(SendMessageTool(
+                        to_agent=str(item.get("to_agent", AgentType.HR_ROSTERING.value)),
+                        content=str(item.get("content", "")),
+                        urgency=int(item.get("urgency", item.get("priority", 6))),
+                    ))
+                elif action_type == "ESCALATE_TO_CMO":
+                    actions.append(EscalateToCMOTool(
+                        patient_id=item.get("patient_id"),
+                        urgency=int(item.get("urgency", item.get("priority", 8))),
+                        summary=str(item.get("summary", item.get("reasoning", ""))),
+                    ))
+                elif action_type == "FLAG_POLICY_VIOLATION":
+                    actions.append(FlagPolicyViolationTool(
+                        violation_type=str(item.get("violation_type", "ISOLATION_BREACH")),
+                        description=str(item.get("description", item.get("reasoning", ""))),
+                        affected_patient_id=item.get("affected_patient_id"),
+                    ))
+            except Exception:
+                continue
+        return actions
+
+    def _active_pathogen(self, state: EnvironmentState) -> str:
+        if state.active_pathogens:
+            return state.active_pathogens[0]
+        return max(self.pathogen_db.items(), key=lambda item: float(item[1].get("spread_rate", 0.0)))[0]
+
+    def _patient_pathogen(self, patient: Any, state: EnvironmentState) -> str:
+        condition = patient.condition.lower()
+        for pathogen in self.pathogen_db:
+            if pathogen in condition:
+                if pathogen not in state.active_pathogens:
+                    state.active_pathogens.append(pathogen)
+                return pathogen
+        return self._active_pathogen(state)
+
+    def _isolation_for(self, pathogen: str) -> str:
+        return str(self.pathogen_db.get(pathogen, {}).get("isolation", IsolationStatus.FULL.value))
+
+    def _is_infectious(self, patient: Any, state: EnvironmentState) -> bool:
+        text = patient.condition.lower()
+        pathogen_hit = any(pathogen in text for pathogen in self.pathogen_db)
+        clinical_hit = any(
+            token in text
+            for token in ("infect", "viral", "pneumonia", "meningitis", "fever", "gastroenteritis", "tuberculosis", "norovirus")
+        )
+        return pathogen_hit or (state.crisis.type == CrisisType.OUTBREAK and clinical_hit)
+
+    def _source_patient_id(self, state: EnvironmentState, ward: str, infected_patient_id: str) -> str:
+        for patient in state.patients:
+            if patient.id != infected_patient_id and self._ward_key(patient.ward.value) == ward and self._is_infectious(patient, state):
+                return patient.id
+        return infected_patient_id
+
+    @staticmethod
+    def _ward_key(ward: str) -> str:
+        if ward in {"WARD_A", "WARD_B", "WARD"}:
+            return "WARD"
+        if ward == "TRIAGE":
+            return "ER"
+        return ward
+
+
 class ICUManagementAgent(BaseAgent):
     """ICU bed and ventilator management specialist.
 
@@ -247,6 +830,21 @@ class ICUManagementAgent(BaseAgent):
         prompt = "Manage ICU resources. Allocate beds, ventilators, and plan discharges."
         response = await self._call_llm(prompt, context)
         return self._parse_actions(response, state)
+
+    def _parse_actions(self, response: dict[str, Any], state: EnvironmentState) -> list[AgentAction]:
+        actions = []
+        for a in response.get("actions", []):
+            try:
+                actions.append(AgentAction(
+                    agent_type=self.agent_type,
+                    action_type=ActionType[a.get("action_type", "TRANSFER_TO_ICU")],
+                    target_id=int(a.get("target_id", 0)),
+                    priority=int(a.get("priority", 5)),
+                    reasoning=a.get("reasoning", ""),
+                ))
+            except (KeyError, ValueError):
+                continue
+        return actions
 
     def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
         actions: list[AgentAction] = []
@@ -324,6 +922,21 @@ class PharmacyAgent(BaseAgent):
         prompt = "Manage pharmacy operations. Process orders, check interactions, monitor stock."
         response = await self._call_llm(prompt, context)
         return self._parse_actions(response, state)
+
+    def _parse_actions(self, response: dict[str, Any], state: EnvironmentState) -> list[AgentAction]:
+        actions = []
+        for a in response.get("actions", []):
+            try:
+                actions.append(AgentAction(
+                    agent_type=self.agent_type,
+                    action_type=ActionType[a.get("action_type", "ORDER_MEDICATION")],
+                    target_id=int(a.get("target_id", 0)),
+                    priority=int(a.get("priority", 5)),
+                    reasoning=a.get("reasoning", ""),
+                ))
+            except (KeyError, ValueError):
+                continue
+        return actions
 
     def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
         actions: list[AgentAction] = []
@@ -476,6 +1089,21 @@ class ITSystemsAgent(BaseAgent):
         response = await self._call_llm(prompt, context)
         return self._parse_actions(response, state)
 
+    def _parse_actions(self, response: dict[str, Any], state: EnvironmentState) -> list[AgentAction]:
+        actions = []
+        for a in response.get("actions", []):
+            try:
+                actions.append(AgentAction(
+                    agent_type=self.agent_type,
+                    action_type=ActionType[a.get("action_type", "FLAG_POLICY_VIOLATION")],
+                    target_id=int(a.get("target_id", 0)),
+                    priority=int(a.get("priority", 5)),
+                    reasoning=a.get("reasoning", ""),
+                ))
+            except (KeyError, ValueError):
+                continue
+        return actions
+
     def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
         actions: list[AgentAction] = []
         focus, signals = _expert_focus(state)
@@ -535,8 +1163,8 @@ class ITSystemsAgent(BaseAgent):
 class BloodBankAgent(BaseAgent):
     """Blood Bank Manager."""
 
-    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True) -> None:
-        super().__init__(AgentType.BLOOD_BANK, config, bus, mock_llm)
+    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True, model_name: str | None = None) -> None:
+        super().__init__(AgentType.BLOOD_BANK, config, bus, mock_llm, model_name)
         self.inventory: dict[str, int] = {
             "O+": 20, "O-": 10, "A+": 15, "A-": 8, "B+": 12, "B-": 6, "AB+": 5, "AB-": 3
         }
@@ -550,10 +1178,29 @@ class BloodBankAgent(BaseAgent):
         context = self._build_state_context(state)
         # Pass current inventory dict and pending_requests as JSON context
         import json
-        extra_ctx = json.dumps({"inventory": self.inventory, "pending_requests": self.pending_requests})
+        extra_ctx = json.dumps(
+            {"inventory": self.inventory, "pending_requests": self.pending_requests},
+            default=_json_safe_default,
+        )
         context = f"{context}\nBlood Bank Context:\n{extra_ctx}"
         prompt = self.config.get("system_prompt", "Manage blood inventory.")
-        return await self._call_llm(prompt, context, state)
+        response = await self._call_llm(prompt, context)
+        return self._parse_actions(response, state)
+
+    def _parse_actions(self, response: dict[str, Any], state: EnvironmentState) -> list[AgentAction]:
+        actions = []
+        for a in response.get("actions", []):
+            try:
+                actions.append(AgentAction(
+                    agent_type=self.agent_type,
+                    action_type=ActionType[a.get("action_type", "REQUEST_BLOOD")],
+                    target_id=int(a.get("target_id", 0)),
+                    priority=int(a.get("priority", 5)),
+                    reasoning=a.get("reasoning", ""),
+                ))
+            except (KeyError, ValueError):
+                continue
+        return actions
 
     def _parse_llm_response(self, raw: str) -> list[AgentAction]:
         # Keep parsing isolated as requested in docs
@@ -660,8 +1307,8 @@ class BloodBankAgent(BaseAgent):
 class EthicsCommitteeAgent(BaseAgent):
     """Ethics Committee Oversight Agent."""
 
-    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True) -> None:
-        super().__init__(AgentType.ETHICS_COMMITTEE, config, bus, mock_llm)
+    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True, model_name: str | None = None) -> None:
+        super().__init__(AgentType.ETHICS_COMMITTEE, config, bus, mock_llm, model_name)
         from triage.env.state import EthicalFramework
         self.framework = EthicalFramework(self.config.get("ethical_framework", "utilitarian"))
         self.rationing_log = []
@@ -704,12 +1351,27 @@ class EthicsCommitteeAgent(BaseAgent):
                 ))
         
         import json
-        extra_ctx = json.dumps({"scenarios": scenarios})
+        extra_ctx = json.dumps({"scenarios": scenarios}, default=_json_safe_default)
         context = f"{context}\nRationing Scenarios:\n{extra_ctx}"
         prompt = self.config.get("system_prompt", "Manage ethics.")
-        llm_actions = await self._call_llm(prompt, context, state)
+        llm_actions = self._parse_actions(await self._call_llm(prompt, context), state)
         actions.extend(llm_actions)
         return [a for a in actions if a is not None]
+
+    def _parse_actions(self, response: dict[str, Any], state: EnvironmentState) -> list[AgentAction]:
+        actions = []
+        for a in response.get("actions", []):
+            try:
+                actions.append(AgentAction(
+                    agent_type=self.agent_type,
+                    action_type=ActionType[a.get("action_type", "FLAG_POLICY_VIOLATION")],
+                    target_id=int(a.get("target_id", 0)),
+                    priority=int(a.get("priority", 5)),
+                    reasoning=a.get("reasoning", ""),
+                ))
+            except (KeyError, ValueError):
+                continue
+        return actions
 
     def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
         actions = []
@@ -871,8 +1533,10 @@ class EthicsCommitteeAgent(BaseAgent):
 # ─── Agent Factory ───────────────────────────────────────────
 
 AGENT_CLASSES: dict[AgentType, type[BaseAgent]] = {
+    AgentType.AMBULANCE_DISPATCH: AmbulanceDispatchAgent,
     AgentType.CMO_OVERSIGHT: CMOOversightAgent,
     AgentType.ER_TRIAGE: ERTriageAgent,
+    AgentType.INFECTION_CONTROL: InfectionControlAgent,
     AgentType.ICU_MANAGEMENT: ICUManagementAgent,
     AgentType.PHARMACY: PharmacyAgent,
     AgentType.HR_ROSTERING: HRRosteringAgent,

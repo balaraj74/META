@@ -1,370 +1,175 @@
 #!/usr/bin/env python3
-"""
-train_grpo.py — GRPO/RLVR training pipeline for TRIAGE hospital agents.
-
-This is the CORE hackathon deliverable. It:
-  1. Loads Qwen2.5-0.5B-Instruct in 4-bit via Unsloth
-  2. Applies LoRA adapters for parameter-efficient training
-  3. Builds prompt dataset from hospital crisis environment rollouts
-  4. Runs GRPO training with 8 independent reward verifiers
-  5. Tracks per-verifier metrics with curriculum scheduling
-  6. Saves LoRA adapters and merged model
-
-Hardware target: 4GB RTX 2050
-  - load_in_4bit=True
-  - num_generations=4 (minimum viable GRPO group size)
-  - gradient_checkpointing="unsloth"
-  - per_device_train_batch_size=1 + gradient_accumulation_steps=8
-
-Usage:
-    # Full training run
-    python scripts/train_grpo.py
-
-    # Quick validation (10 steps)
-    python scripts/train_grpo.py --quick
-
-    # Resume from checkpoint
-    python scripts/train_grpo.py --resume ./models/grpo_output/checkpoint-100
-
-    # Custom dataset
-    python scripts/train_grpo.py --dataset data/grpo/train.jsonl
-"""
+"""Live GRPO training for TRIAGE using HospitalEnv rollouts."""
 
 from __future__ import annotations
 
 import argparse
-import json
 import logging
-import os
 import sys
-import time
 from pathlib import Path
+from typing import Any
 
-# Add project root
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)s  %(name)s  %(message)s",
-    datefmt="%H:%M:%S",
-)
+import torch
+from datasets import load_from_disk
+from trl import GRPOConfig, GRPOTrainer
+from unsloth import FastLanguageModel
+
+from scripts.build_grpo_dataset import build_crisis_prompt_dataset
+from triage.env.grpo_env_adapter import HospitalGRPOEnvironment
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("train_grpo")
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Configuration
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# Model
-MODEL_NAME = "unsloth/Qwen2.5-0.5B-Instruct"
-MAX_SEQ_LENGTH = 512
-LOAD_IN_4BIT = True
-
-# LoRA
-LORA_R = 16
-LORA_ALPHA = 16
-LORA_DROPOUT = 0
-LORA_TARGET_MODULES = [
-    "q_proj", "k_proj", "v_proj", "o_proj",
-    "gate_proj", "up_proj", "down_proj",
-]
-
-# GRPO
-NUM_GENERATIONS = 4          # G in GRPO — group size for reward comparison
-MAX_COMPLETION_LENGTH = 128  # agent decisions are short
-TEMPERATURE = 0.9            # exploration during training
-NUM_EPOCHS = 3
-PER_DEVICE_BATCH = 1
-GRADIENT_ACCUM = 8           # effective batch = 8
-LEARNING_RATE = 5e-5
-LOGGING_STEPS = 5
-SAVE_STEPS = 50
-
-# Paths
-OUTPUT_DIR = "./models/grpo_output"
-DATASET_PATH = "./data/grpo/train.jsonl"
-METRICS_PATH = "./data/grpo/training_metrics.json"
-MERGED_DIR = "./models/grpo_merged"
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Reward function wrapper for GRPOTrainer
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def _build_reward_function():
-    """
-    Build a reward function compatible with TRL's GRPOTrainer.
-
-    GRPOTrainer calls: reward_func(completions, prompts, **kwargs) -> list[float]
-    """
-    from triage.rewards.verifiers import compute_all_rewards
-    from triage.rewards.sandbox import validate_action
-
-    def reward_fn(
-        completions: list[str],
-        prompts: list[str],
-        **kwargs,
-    ) -> list[float]:
-        """Compute aggregate reward for each completion."""
-        rewards = []
-        state_dicts = kwargs.get("state_dicts", [])
-        has_state_dicts = bool(state_dicts)
-
-        for i, completion in enumerate(completions):
-            # 1. Sandbox check — reject unsafe completions immediately
-            is_safe, reason = validate_action(completion)
-            if not is_safe:
-                rewards.append(0.0)
-                continue
-
-            # 2. Prefer real environment state; only parse prompt as fallback.
-            if has_state_dicts:
-                candidate_state = state_dicts[i] if i < len(state_dicts) else None
-                state = candidate_state if isinstance(candidate_state, dict) else {}
-            else:
-                prompt = prompts[i] if i < len(prompts) else ""
-                state = _extract_state_from_prompt(prompt)
-
-            if not state:
-                rewards.append(0.3)
-                continue
-
-            # 3. Run all verifiers
-            scores = compute_all_rewards(state, completion)
-            rewards.append(scores.get("total", 0.0))
-
-        return rewards
-
-    return reward_fn
+MODEL_NAME = "Qwen/Qwen3-27B"
+DATASET_DIR = Path("data/grpo_crisis_prompts")
+OUTPUT_DIR = "./models/grpo_qwen3_27b"
 
 
-def _extract_state_from_prompt(prompt: str) -> dict:
-    """
-    Best-effort fallback parser when state_dicts are unavailable.
-    """
-    import re
-
-    if not prompt:
-        return {}
-
-    state: dict[str, object] = {}
-
-    # Extract ICU occupancy
-    match = re.search(r"ICU OCCUPANCY:\s*(\d+)%", prompt)
-    if match:
-        state["icu_occupancy"] = int(match.group(1)) / 100.0
-
-    # Extract critical count
-    match = re.search(r"CRITICAL PATIENTS\s*\((\d+)", prompt)
-    if match:
-        state["critical_count"] = int(match.group(1))
-
-    # Extract violations
-    match = re.search(r"VIOLATIONS INJECTED:\s*(\d+)\s*\|\s*CAUGHT:\s*(\d+)", prompt)
-    if match:
-        state["violations_injected"] = int(match.group(1))
-        state["violations_caught"] = int(match.group(2))
-
-    # Extract survival rate
-    match = re.search(r"SURVIVAL RATE:\s*(\d+\.?\d*)%", prompt)
-    if match:
-        state["survival_rate"] = float(match.group(1)) / 100.0
-
-    # Extract crisis type
-    match = re.search(r"CRISIS:\s*(\w+)", prompt)
-    if match:
-        state["crisis_type"] = match.group(1).lower()
-
-    # Extract patient IDs from the prompt for hallucination checking
-    patient_ids = []
-    for match in re.finditer(r"P-(\d{2,3})", prompt):
-        patient_ids.append({"id": int(match.group(1)), "status": "CRITICAL"})
-    if patient_ids:
-        state["patients_summary"] = patient_ids
-
-    # Infer alive/deceased only when survival_rate is present.
-    if "survival_rate" in state:
-        total = 20  # approximate
-        alive = int(float(state["survival_rate"]) * total)
-        state["alive_count"] = alive
-        state["deceased_count"] = total - alive
-
-    return state
+def _terminal_rewards(**kwargs: Any) -> list[float] | None:
+    rewards = kwargs.get("terminal_rewards") or kwargs.get("rewards")
+    if rewards is None:
+        return None
+    return [float(r) for r in rewards]
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Dataset loader
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def load_prompt_dataset(path: str) -> list[dict]:
-    """Load JSONL prompt dataset. Returns list of {"prompt": "...", ...}."""
-    dataset = []
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                record = json.loads(line)
-                dataset.append(record)
-    logger.info("Loaded %d prompts from %s", len(dataset), path)
-    return dataset
+def survival_reward(completions=None, prompts=None, **kwargs) -> list[float]:
+    terminal = _terminal_rewards(**kwargs)
+    if terminal is not None:
+        return terminal
+    states = kwargs.get("states") or kwargs.get("state_dicts") or []
+    rewards = []
+    for state in states:
+        stats = state.get("stats", {}) if isinstance(state, dict) else {}
+        rewards.append(float(stats.get("survival_rate", 0.0)) * 2.0 - 1.0)
+    return rewards or [0.0 for _ in (completions or [])]
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Main training loop
-# ═══════════════════════════════════════════════════════════════════════════════
+def safety_reward(completions=None, prompts=None, **kwargs) -> list[float]:
+    terminal = _terminal_rewards(**kwargs)
+    if terminal is not None:
+        return terminal
+    states = kwargs.get("states") or kwargs.get("state_dicts") or []
+    rewards = []
+    for state in states:
+        blocks = state.get("safety_blocks", []) if isinstance(state, dict) else []
+        rewards.append(1.0 if not blocks else -1.0)
+    return rewards or [0.0 for _ in (completions or [])]
 
-def main():
-    parser = argparse.ArgumentParser(description="GRPO training for TRIAGE agents")
-    parser.add_argument("--quick", action="store_true", help="Quick validation (10 steps)")
-    parser.add_argument("--dataset", type=str, default=DATASET_PATH, help="Path to JSONL prompt dataset")
-    parser.add_argument("--resume", type=str, default=None, help="Resume from checkpoint path")
-    parser.add_argument("--output", type=str, default=OUTPUT_DIR, help="Output directory")
-    parser.add_argument("--no-merge", action="store_true", help="Skip model merge after training")
-    parser.add_argument("--build-dataset", action="store_true", help="Build dataset before training")
+
+def resource_reward(completions=None, prompts=None, **kwargs) -> list[float]:
+    terminal = _terminal_rewards(**kwargs)
+    if terminal is not None:
+        return terminal
+    states = kwargs.get("states") or kwargs.get("state_dicts") or []
+    rewards = []
+    for state in states:
+        stats = state.get("stats", {}) if isinstance(state, dict) else {}
+        occupancy = float(stats.get("icu_occupancy", 0.0))
+        rewards.append(1.0 - min(1.0, max(0.0, occupancy - 0.85) / 0.15) * 2.0)
+    return rewards or [0.0 for _ in (completions or [])]
+
+
+def ethics_reward(completions=None, prompts=None, **kwargs) -> list[float]:
+    terminal = _terminal_rewards(**kwargs)
+    if terminal is not None:
+        return terminal
+    states = kwargs.get("states") or kwargs.get("state_dicts") or []
+    rewards = []
+    for state in states:
+        stats = state.get("stats", {}) if isinstance(state, dict) else {}
+        injected = int(stats.get("violations_injected", 0))
+        caught = int(stats.get("violations_caught", 0))
+        rewards.append(
+            1.0 if injected == 0 else min(1.0, caught / max(injected, 1)) * 2.0 - 1.0
+        )
+    return rewards or [0.0 for _ in (completions or [])]
+
+
+def load_or_build_dataset(path: Path):
+    if not path.exists():
+        logger.info("Building crisis prompt dataset at %s", path)
+        return build_crisis_prompt_dataset(output_dir=path)
+    return load_from_disk(str(path))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Train Qwen3-27B with live HospitalEnv GRPO")
+    parser.add_argument("--dataset", type=Path, default=DATASET_DIR)
+    parser.add_argument("--output-dir", type=str, default=OUTPUT_DIR)
+    parser.add_argument("--resume", type=str, default=None)
+    parser.add_argument("--quick", action="store_true", help="Use a small dataset slice for smoke testing")
     args = parser.parse_args()
-
-    start = time.time()
-
-    # ── Step 0: Build dataset if needed ───────────────────────────────────────
-    dataset_path = Path(args.dataset)
-    if args.build_dataset or not dataset_path.exists():
-        logger.info("Building prompt dataset...")
-        from scripts.build_grpo_dataset import build_dataset
-        build_dataset(
-            n_episodes=50 if args.quick else 100,
-            output_path=dataset_path,
-            seed=42,
-        )
-
-    # ── Step 1: Load model with Unsloth ───────────────────────────────────────
-    logger.info("Loading model: %s (4-bit=%s)", MODEL_NAME, LOAD_IN_4BIT)
-
-    try:
-        from unsloth import FastLanguageModel
-    except ImportError:
-        logger.error(
-            "Unsloth not installed. Install with:\n"
-            "  pip install unsloth\n"
-            "Or for Colab:\n"
-            "  pip install 'unsloth[colab-new]'"
-        )
-        sys.exit(1)
 
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=args.resume or MODEL_NAME,
-        max_seq_length=MAX_SEQ_LENGTH,
-        load_in_4bit=LOAD_IN_4BIT,
-        dtype=None,  # auto
+        max_seq_length=4096,
+        dtype=torch.bfloat16,
+        load_in_4bit=False,
     )
 
-    # ── Step 2: Apply LoRA ────────────────────────────────────────────────────
     if args.resume is None:
-        logger.info("Applying LoRA (r=%d, alpha=%d)", LORA_R, LORA_ALPHA)
         model = FastLanguageModel.get_peft_model(
             model,
-            r=LORA_R,
-            target_modules=LORA_TARGET_MODULES,
-            lora_alpha=LORA_ALPHA,
-            lora_dropout=LORA_DROPOUT,
+            r=64,
+            lora_alpha=128,
+            lora_dropout=0.05,
+            target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
             bias="none",
-            use_gradient_checkpointing="unsloth",
             random_state=42,
         )
 
-    # ── Step 3: Load dataset ─────────────────────────────────────────────────
-    raw_data = load_prompt_dataset(str(dataset_path))
-    prompts = [record["prompt"] for record in raw_data]
-
-    # TRL expects a Dataset with a "prompt" column
-    from datasets import Dataset
-    dataset = Dataset.from_dict({"prompt": prompts})
-
+    crisis_dataset = load_or_build_dataset(args.dataset)
     if args.quick:
-        dataset = dataset.select(range(min(40, len(dataset))))
-        logger.info("Quick mode: using %d prompts", len(dataset))
+        crisis_dataset = crisis_dataset.select(range(min(32, len(crisis_dataset))))
 
-    # ── Step 4: Build reward function ─────────────────────────────────────────
-    reward_fn = _build_reward_function()
-
-    # ── Step 5: Configure GRPOTrainer ─────────────────────────────────────────
-    try:
-        from trl import GRPOTrainer, GRPOConfig
-    except ImportError:
-        logger.error(
-            "TRL not installed. Install with:\n"
-            "  pip install trl>=0.12"
-        )
-        sys.exit(1)
-
-    max_steps = 10 if args.quick else 0  # 0 = use num_train_epochs
-
-    training_args = GRPOConfig(
-        output_dir=args.output,
-        num_train_epochs=1 if args.quick else NUM_EPOCHS,
-        max_steps=max_steps if max_steps > 0 else -1,
-        per_device_train_batch_size=PER_DEVICE_BATCH,
-        gradient_accumulation_steps=GRADIENT_ACCUM,
-        learning_rate=LEARNING_RATE,
-        max_completion_length=MAX_COMPLETION_LENGTH,
-        max_prompt_length=MAX_SEQ_LENGTH - MAX_COMPLETION_LENGTH,
-        num_generations=NUM_GENERATIONS,
-        temperature=TEMPERATURE,
-        logging_steps=LOGGING_STEPS,
-        save_steps=SAVE_STEPS if not args.quick else 999999,
+    config = GRPOConfig(
+        num_generations=16,
+        max_prompt_length=2048,
+        max_completion_length=2048,
+        learning_rate=2e-5,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=8,
+        num_train_epochs=1 if args.quick else 3,
+        max_steps=2 if args.quick else -1,
+        max_grad_norm=0.1,
+        warmup_ratio=0.1,
+        lr_scheduler_type="cosine",
+        report_to="wandb",
+        logging_steps=1,
+        save_steps=50,
+        output_dir=args.output_dir,
+        bf16=True,
         save_total_limit=3,
-        report_to="none",
-        bf16=False,          # RTX 2050 supports fp16, not bf16
-        fp16=True,
         seed=42,
-        log_level="info",
     )
-
-    logger.info("Initializing GRPOTrainer (G=%d, batch=%d×%d=%d)",
-                NUM_GENERATIONS, PER_DEVICE_BATCH, GRADIENT_ACCUM,
-                PER_DEVICE_BATCH * GRADIENT_ACCUM)
 
     trainer = GRPOTrainer(
         model=model,
         processing_class=tokenizer,
-        reward_funcs=reward_fn,
-        args=training_args,
-        train_dataset=dataset,
+        args=config,
+        train_dataset=crisis_dataset,
+        reward_funcs=[
+            survival_reward,
+            safety_reward,
+            resource_reward,
+            ethics_reward,
+        ],
+        environment_factory=HospitalGRPOEnvironment,
     )
 
-    # ── Step 6: Train ─────────────────────────────────────────────────────────
-    logger.info("Starting GRPO training...")
-    train_result = trainer.train(resume_from_checkpoint=args.resume)
-
-    logger.info("Training complete. Metrics: %s", train_result.metrics)
-
-    # ── Step 7: Save ──────────────────────────────────────────────────────────
-    logger.info("Saving LoRA adapters to %s", args.output)
-    trainer.save_model(args.output)
-    tokenizer.save_pretrained(args.output)
-
-    # ── Step 8: Merge (optional) ──────────────────────────────────────────────
-    if not args.no_merge:
-        merge_dir = Path(MERGED_DIR)
-        logger.info("Merging LoRA → full model at %s", merge_dir)
-        try:
-            model.save_pretrained_merged(
-                str(merge_dir),
-                tokenizer,
-                save_method="merged_16bit",
-            )
-            logger.info("Merged model saved successfully.")
-        except Exception as exc:
-            logger.warning("Merge failed (expected on 4-bit): %s. LoRA adapters saved separately.", exc)
-
-    # ── Step 9: Summary ───────────────────────────────────────────────────────
-    elapsed = time.time() - start
-    print(f"\n{'═' * 60}")
-    print(f"  GRPO Training Complete")
-    print(f"  Time:       {elapsed / 60:.1f} min")
-    print(f"  Steps:      {train_result.global_step}")
-    print(f"  Loss:       {train_result.training_loss:.4f}")
-    print(f"  Adapters:   {args.output}")
-    if not args.no_merge:
-        print(f"  Merged:     {MERGED_DIR}")
-    print(f"{'═' * 60}\n")
+    trainer.train(resume_from_checkpoint=args.resume)
+    trainer.save_model(args.output_dir)
+    tokenizer.save_pretrained(args.output_dir)
 
 
 if __name__ == "__main__":

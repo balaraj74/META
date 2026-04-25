@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import subprocess
+import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -43,6 +46,7 @@ from triage.api.schemas import (
 from triage.env.hospital_env import HospitalEnv
 from triage.env.state import AgentType, CrisisType
 from triage.agents.message_bus import MessageBus
+from triage.agents.orchestrator import AGENT_STEP_ORDER
 from triage.agents.specialized import create_all_agents
 from triage.rewards.reward_model import RewardModel
 from triage.training.episode_collector import EpisodeCollector
@@ -54,6 +58,41 @@ logger = logging.getLogger(__name__)
 # ── Application State ─────────────────────────────────────────────────────────
 
 _start_time = time.time()
+_env_server_process: subprocess.Popen | None = None
+
+
+async def _ensure_grpo_env_server() -> None:
+    """Start the isolated HospitalEnv server when API-driven GRPO training is enabled."""
+    global _env_server_process
+    if os.getenv("GRPO_TRAINING_MODE", "").lower() != "true":
+        return
+
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=1.0) as client:
+            response = await client.get("http://127.0.0.1:8001/health")
+            if response.status_code == 200:
+                return
+    except Exception:
+        pass
+
+    env = dict(os.environ)
+    env["GRPO_TRAINING_MODE"] = "false"
+    _env_server_process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "triage.api.env_server:app",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8001",
+        ],
+        env=env,
+    )
+    logger.info("Started isolated GRPO HospitalEnv server on port 8001")
 
 
 class SimulationManager:
@@ -119,7 +158,7 @@ class SimulationManager:
 
         # Collect actions from all agents
         all_actions = []
-        for agent_type in AgentType:
+        for agent_type in AGENT_STEP_ORDER:
             agent = self.agents.get(agent_type)
             if agent:
                 try:
@@ -181,6 +220,20 @@ class SimulationManager:
                     data=_serialize_decision(decision)
                 ))
 
+        for event in state_after.infection_events:
+            if event.step == state_after.step_count:
+                await self._broadcast(WSMessage(
+                    type="infection_spread",
+                    data={
+                        "event_id": event.event_id,
+                        "source_patient": event.source_patient_id,
+                        "infected_patient": event.infected_patient_id,
+                        "ward": event.ward,
+                        "pathogen": event.pathogen,
+                        "prevented": event.prevented,
+                        "step": event.step,
+                    },
+                ))
 
         if terminated:
             self.status = SimulationStatus.COMPLETED
@@ -291,10 +344,13 @@ sim_manager = SimulationManager()
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application startup/shutdown."""
     logger.info("TRIAGE API starting up...")
+    await _ensure_grpo_env_server()
     yield
     logger.info("TRIAGE API shutting down...")
     if sim_manager.status == SimulationStatus.RUNNING:
         await sim_manager.stop()
+    if _env_server_process is not None and _env_server_process.poll() is None:
+        _env_server_process.terminate()
 
 
 # ── Application ───────────────────────────────────────────────────────────────

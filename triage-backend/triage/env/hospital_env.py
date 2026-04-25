@@ -30,10 +30,12 @@ from triage.env.state import (
     AgentAction,
     AgentMessage,
     AgentState,
+    AmbulanceStatus,
     AppAuditEvent,
     AgentType,
     CrisisType,
     EnvironmentState,
+    IncomingPatient,
     MessageType,
     Patient,
     PatientStatus,
@@ -51,7 +53,7 @@ class ObservationSpace:
 
     PATIENTS_SHAPE = (50, 12)
     RESOURCES_SHAPE = (8,)
-    AGENTS_SHAPE = (6, 8)
+    AGENTS_SHAPE = (len(AgentType), 8)
     CRISIS_SHAPE = (10,)
     POLICY_SHAPE = (20,)
     EXPERT_SHAPE = (6,)
@@ -218,6 +220,14 @@ class HospitalEnv:
             active_policies=policies,
             pending_patients=pending_queue,
         )
+        if crisis.type == CrisisType.OUTBREAK:
+            self._state.active_pathogens = ["unknown_pathogen"]
+            self._state.ward_lockdowns = {"ER": False, "ICU": False, "WARD": False, "ISOLATION": False}
+        if crisis.type == CrisisType.MASS_CASUALTY:
+            self._seed_mass_casualty_incoming(self._state)
+        if crisis.type == CrisisType.STAFF_SHORTAGE:
+            for ambulance in self._state.ambulances[:crisis.offline_ambulance_count]:
+                ambulance.status = AmbulanceStatus.OFFLINE
 
         # Plan schema drifts for this episode
         self._schema_drift.plan_drifts(self.max_steps, difficulty)
@@ -298,6 +308,7 @@ class HospitalEnv:
 
         # Update world state (natural deterioration, patient arrivals)
         self._state.update(action_result)
+        self._process_ambulance_arrivals(self._state)
 
         # Record action in history
         self._state.action_history.append(agent_action)
@@ -330,6 +341,65 @@ class HospitalEnv:
             )
 
         return self._build_observation(), reward, terminated, info
+
+    def _seed_mass_casualty_incoming(self, state: EnvironmentState) -> None:
+        initial = state.crisis.initial_incoming_patients or []
+        for index, ambulance in enumerate(state.ambulances[:len(initial) or 5], start=1):
+            incoming = initial[index - 1] if index - 1 < len(initial) else IncomingPatient(
+                patient_id=f"MCI-IN-{state.episode}-{index}",
+                acuity_estimate=10 - (index % 4),
+                incident_type=["trauma", "respiratory", "cardiac"][index % 3],
+                eta_steps=1,
+                ambulance_id=ambulance.unit_id,
+            )
+            incoming.ambulance_id = ambulance.unit_id
+            ambulance.status = AmbulanceStatus.EN_ROUTE
+            ambulance.patient_id = incoming.patient_id
+            ambulance.eta_steps = incoming.eta_steps
+            ambulance.acuity_estimate = incoming.acuity_estimate
+            ambulance.incident_type = incoming.incident_type
+            state.incoming_patients.append(incoming)
+
+    def _process_ambulance_arrivals(self, state: EnvironmentState) -> None:
+        arrived: list[IncomingPatient] = [
+            incoming for incoming in state.incoming_patients
+            if incoming.eta_steps <= 0
+        ]
+        if not arrived:
+            return
+        existing_ids = {patient.id for patient in state.patients}
+        for incoming in arrived:
+            if incoming.patient_id not in existing_ids:
+                patient = Patient(
+                    id=incoming.patient_id,
+                    name=f"Ambulance {incoming.patient_id}",
+                    age=40,
+                    condition=f"{incoming.incident_type} ambulance arrival",
+                    status=PatientStatus.INCOMING,
+                    ward=WardType.TRIAGE,
+                    triage_score=incoming.acuity_estimate,
+                    icu_required=incoming.acuity_estimate >= 8,
+                )
+                patient.add_event(
+                    "AMBULANCE_ARRIVAL",
+                    f"Arrived by {incoming.ambulance_id}; pre_alert_sent={incoming.pre_alert_sent}",
+                    AgentType.AMBULANCE_DISPATCH,
+                )
+                state.patients.append(patient)
+                existing_ids.add(incoming.patient_id)
+            for ambulance in state.ambulances:
+                if ambulance.unit_id == incoming.ambulance_id:
+                    ambulance.status = AmbulanceStatus.RETURNING
+                    ambulance.patient_id = None
+                    ambulance.eta_steps = 0
+                    ambulance.acuity_estimate = 0
+                    ambulance.incident_type = ""
+                    break
+        arrived_ids = {incoming.patient_id for incoming in arrived}
+        state.incoming_patients = [
+            incoming for incoming in state.incoming_patients
+            if incoming.patient_id not in arrived_ids
+        ]
 
     async def get_state(self) -> dict[str, Any]:
         """Return current state as JSON (for API/WebSocket)."""

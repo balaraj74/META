@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from triage.env.state import AgentAction, EnvironmentState
+from triage.env.state import ActionType, AgentAction, EnvironmentState
 from triage.reward.components import (
     AdaptationReward,
     ComplianceReward,
@@ -37,6 +37,8 @@ class RewardBreakdown:
     blood_management: float = 0.0
     ethics_compliance: float = 0.0
     safety_compliance: float = 0.0
+    infection_control: float = 0.0
+    dispatch_quality: float = 0.0
     penalties: float = 0.0
     workflow_bonus: float = 0.0
     terminal_bonus: float = 0.0
@@ -56,6 +58,8 @@ class RewardBreakdown:
             "blood_management": round(self.blood_management, 4),
             "ethics_compliance": round(self.ethics_compliance, 4),
             "safety_compliance": round(self.safety_compliance, 4),
+            "infection_control": round(self.infection_control, 4),
+            "dispatch_quality": round(self.dispatch_quality, 4),
             "penalties": round(self.penalties, 4),
             "workflow_bonus": round(self.workflow_bonus, 4),
             "terminal_bonus": round(self.terminal_bonus, 4),
@@ -81,13 +85,15 @@ class RewardModel:
     """Production reward model with prompt-aligned component names."""
 
     DEFAULT_WEIGHTS = {
-        "survival": 0.35,
+        "survival": 0.25,
         "safety_compliance": 0.15,
-        "depth": 0.15,
+        "depth": 0.10,
         "oversight": 0.10,
         "compliance": 0.10,
         "ethics_compliance": 0.10,
-        "coordination": 0.05,
+        "coordination": 0.10,
+        "infection_control": 0.05,
+        "dispatch_quality": 0.05,
         "blood_management": 0.0,
         "adaptation": 0.0,
         "expert_alignment": 0.0,
@@ -136,6 +142,8 @@ class RewardModel:
         breakdown.blood_management = self._compute_blood_management(state)
         breakdown.ethics_compliance = self._compute_ethics_compliance(state)
         breakdown.safety_compliance = self._compute_safety_compliance(state)
+        breakdown.infection_control = self._compute_infection_control(state)
+        breakdown.dispatch_quality = self._compute_dispatch_quality(state)
         workflow_penalties, penalty_details = self._workflow_penalties(app_audits, action_result)
         breakdown.penalties = self._penalties(state) + workflow_penalties
         breakdown.workflow_bonus = self._workflow_bonus(messages, app_audits, action_result)
@@ -152,6 +160,8 @@ class RewardModel:
             + effective_weights.get("blood_management", 0) * breakdown.blood_management
             + effective_weights.get("ethics_compliance", 0) * breakdown.ethics_compliance
             + effective_weights.get("safety_compliance", 0) * breakdown.safety_compliance
+            + effective_weights.get("infection_control", 0) * breakdown.infection_control
+            + effective_weights.get("dispatch_quality", 0) * breakdown.dispatch_quality
         )
         breakdown.total = (
             weighted_base
@@ -345,6 +355,73 @@ class RewardModel:
             
         rew += 0.15 * fulfilled
         return rew
+
+    def _compute_infection_control(self, state: EnvironmentState) -> float:
+        current_events = [
+            event for event in getattr(state, "infection_events", [])
+            if event.step == state.step_count
+        ]
+        reward = 0.10 if not current_events else 0.0
+        reward -= 0.15 * sum(1 for event in current_events if not event.prevented)
+
+        if getattr(state.crisis, "type", None) and state.crisis.type.value == "outbreak":
+            infected = [
+                patient for patient in state.patients
+                if any(
+                    token in patient.condition.lower()
+                    for token in ("infect", "viral", "pneumonia", "meningitis", "fever", "gastroenteritis", "pathogen")
+                )
+            ]
+            if infected and all(
+                any(str(plan).startswith("ISOLATION_ORDER:") for plan in patient.treatment_plan)
+                for patient in infected
+            ):
+                reward += 0.20
+
+        reward -= 0.25 * sum(
+            1
+            for event in current_events
+            if state.ward_lockdowns.get(event.ward) and not event.prevented
+        )
+        return reward
+
+    def _compute_dispatch_quality(self, state: EnvironmentState) -> float:
+        reward = 0.10 if state.diverted_count == 0 else 0.0
+        reward -= 0.10 * state.diverted_count
+
+        high_acuity_incoming = [
+            incoming for incoming in state.incoming_patients
+            if incoming.acuity_estimate >= 8
+        ]
+        high_acuity_arrivals = [
+            patient for patient in state.patients
+            if any(event.event_type == "AMBULANCE_ARRIVAL" for event in patient.history)
+            and patient.triage_score >= 8
+        ]
+        high_acuity_total = len(high_acuity_incoming) + len(high_acuity_arrivals)
+        high_acuity_alerted = sum(1 for incoming in high_acuity_incoming if incoming.pre_alert_sent)
+        high_acuity_alerted += sum(
+            1
+            for patient in high_acuity_arrivals
+            if any("pre_alert_sent=True" in event.description for event in patient.history)
+        )
+        if high_acuity_total and high_acuity_alerted == high_acuity_total:
+            reward += 0.15
+
+        dangerous_no_alert = sum(
+            1
+            for patient in high_acuity_arrivals
+            if patient.triage_score >= 9
+            and not any("pre_alert_sent=True" in event.description for event in patient.history)
+        )
+        reward -= 0.20 * dangerous_no_alert
+
+        if state.diverted_count < 5 and any(
+            event.get("type") == "mutual_aid_requested"
+            for event in state.dispatch_events
+        ):
+            reward += 0.05
+        return reward
 
     def _compute_ethics_compliance(self, state: EnvironmentState) -> float:
         rew = 0.0

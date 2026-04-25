@@ -1,7 +1,7 @@
 # 🏥 TRIAGE — Multi-Agent Hospital Crisis Simulation
 
 > **Meta PyTorch OpenEnv Hackathon Entry**
-> A production-grade, OpenEnv-compatible multi-agent AI system that simulates real-time hospital crisis management with Direct Preference Optimization (DPO) fine-tuning and a live command center dashboard.
+> A production-grade, OpenEnv-compatible multi-agent AI system that simulates real-time hospital crisis management with GRPO fine-tuning, DPO preference training, safety middleware, and a live command center dashboard.
 
 ---
 
@@ -13,6 +13,8 @@
    - [Environment](#environment)
    - [Agents](#agents)
    - [Reward Model](#reward-model)
+   - [Safety Constitution](#safety-constitution)
+   - [Curriculum Learning](#curriculum-learning)
    - [Training Pipeline](#training-pipeline)
    - [API Reference](#api-reference)
 4. [Frontend — triage-command-center](#frontend)
@@ -27,19 +29,22 @@
 
 ## Project Overview
 
-TRIAGE is a **multi-agent reinforcement learning environment** that simulates a hospital under crisis — mass casualty events, disease outbreaks, equipment failures, and staff shortages. Six specialized AI agents collaborate to manage patients, allocate resources, and maintain policy compliance, all orchestrated through a typed message bus.
+TRIAGE is a **multi-agent reinforcement learning environment** that simulates a hospital under crisis — mass casualty events, disease outbreaks, equipment failures, and staff shortages. Ten specialized AI agents collaborate to manage patients, allocate resources, and maintain policy compliance, all orchestrated through a typed message bus.
 
-The system is designed for the **Meta PyTorch OpenEnv Hackathon**, implementing the OpenEnv-compatible interface (`reset`, `step`, `state`) alongside a complete DPO fine-tuning pipeline to teach the agents safe, clinically aligned decision-making.
+The system is designed for the **Meta PyTorch OpenEnv Hackathon**, implementing the OpenEnv-compatible interface (`reset`, `step`, `state`) alongside GRPO and DPO training pipelines to teach the agents safe, clinically aligned decision-making.
 
 ### Key Highlights
 
 | Feature | Detail |
 |---|---|
 | **Framework** | OpenEnv + PyTorch + HuggingFace Transformers |
-| **Base Model** | Qwen/Qwen2.5-0.5B → upgradeable to 1.5B on GPU |
-| **Training Method** | Direct Preference Optimization (DPO) with LoRA |
-| **Agents** | 6 specialized agents (CMO, ER, ICU, Pharmacy, HR, IT) |
+| **Base Model** | Qwen/Qwen3-27B (48GB VRAM HF Spaces) |
+| **Training Method** | GRPO (primary) via TRL + Unsloth + DPO (secondary) |
+| **Agents** | 10 specialized agents (CMO, ER, ICU, Pharmacy, HR, IT, BloodBank, EthicsCommittee, InfectionControl, AmbulanceDispatch) |
 | **Crisis Types** | Mass Casualty, Disease Outbreak, Equipment Failure, Staff Shortage |
+| **Safety Layer** | SafetyConstitution — 10 hard-block rules, auto-fallback actions |
+| **Reward System** | 4 independent binary GRPO verifiers + rule-based reward model |
+| **Curriculum** | 5-tier auto-advancing difficulty scheduler |
 | **API** | FastAPI + WebSocket for real-time streaming |
 | **Dashboard** | React/TypeScript live command center |
 | **Database** | SQLite (dev) via SQLAlchemy + Alembic |
@@ -60,14 +65,23 @@ The system is designed for the **Meta PyTorch OpenEnv Hackathon**, implementing 
   └─────────────────────┘        │  ┌─────────────────────────┐ │
                                  │  │  AgentOrchestrator       │ │
                                  │  │  ┌──────────────────┐   │ │
-                                 │  │  │   CMO Oversight  │   │ │
-                                 │  │  │   ER Triage      │   │ │
-                                 │  │  │   ICU Management │   │ │
-                                 │  │  │   Pharmacy       │   │ │
-                                 │  │  │   HR Rostering   │   │ │
-                                 │  │  │   IT Systems     │   │ │
+                                 │  │  │ CMO Oversight    │   │ │
+                                 │  │  │ ER Triage        │   │ │
+                                 │  │  │ ICU Management   │   │ │
+                                 │  │  │ Pharmacy         │   │ │
+                                 │  │  │ HR Rostering     │   │ │
+                                 │  │  │ IT Systems       │   │ │
+                                 │  │  │ Blood Bank       │   │ │
+                                 │  │  │ Ethics Committee │   │ │
+                                 │  │  │ Infection Control│   │ │
+                                 │  │  │ Ambulance Dispatch│  │ │
                                  │  │  └──────────────────┘   │ │
                                  │  │        │ MessageBus       │ │
+                                 │  └────────┼────────────────┘ │
+                                 │           ▼                   │
+                                 │  ┌─────────────────────────┐ │
+                                 │  │  SafetyConstitution     │ │
+                                 │  │  hard-block + fallback  │ │
                                  │  └────────┼────────────────┘ │
                                  │           ▼                   │
                                  │  ┌─────────────────────────┐ │
@@ -79,7 +93,7 @@ The system is designed for the **Meta PyTorch OpenEnv Hackathon**, implementing 
                                  │  │  RewardModel            │ │
                                  │  │  EpisodeCollector        │ │
                                  │  │  PreferenceLabeler       │ │
-                                 │  │  DPO Training Pipeline   │ │
+                                 │  │  GRPO + DPO Pipeline     │ │
                                  │  └─────────────────────────┘ │
                                  └──────────────────────────────┘
                                               │
@@ -100,22 +114,35 @@ triage-backend/
 ├── triage/
 │   ├── agents/
 │   │   ├── base_agent.py        # Abstract base for all agents
-│   │   ├── specialized.py       # 6 concrete agent implementations
+│   │   ├── specialized.py       # 10 concrete agent implementations
+│   │   │                         # Includes BloodBank, EthicsCommittee,
+│   │   │                         # InfectionControl, AmbulanceDispatch
 │   │   ├── orchestrator.py      # Runs all agents per step
 │   │   ├── message_bus.py       # Typed pub/sub message router
-│   │   └── strategy_memory.py  # Agent lesson memory (BM25)
+│   │   ├── routing_rules.py     # Priority queue + deadlock detection
+│   │   ├── tools.py             # ToolSchema models for all 20 actions
+│   │   ├── tool_validator.py    # Validates tool args against EnvironmentState
+│   │   └── strategy_memory.py   # Agent lesson memory (BM25)
 │   ├── env/
 │   │   ├── hospital_env.py      # OpenEnv HospitalEnv class
 │   │   ├── state.py             # All enums, dataclasses (world model)
 │   │   ├── crisis_generator.py  # Procedural crisis + patient generation
 │   │   ├── enterprise_apps/     # ICU manager, Pharmacy simulators
 │   │   ├── enterprise_registry.py
+│   │   ├── curriculum.py        # CurriculumScheduler — 5 difficulty tiers
+│   │   ├── grpo_env_adapter.py  # TRL environment_factory adapter
 │   │   ├── openenv_adapter.py   # OpenEnv SDK interface adapter
 │   │   └── schema_drift.py      # Simulated EHR schema drift (IT agent)
+│   ├── safety/
+│   │   └── constitution.py      # SafetyConstitution — 10 hard-block rules
 │   ├── reward/
 │   │   └── evaluator.py         # Episode reward evaluation wrapper
 │   ├── rewards/
-│   │   └── reward_model.py      # Multi-component reward model
+│   │   ├── reward_model.py      # Multi-component reward model
+│   │   ├── verifiers.py         # 4 independent binary GRPO verifiers
+│   │   └── reward_logger.py     # Per-verifier W&B logging + variance monitoring
+│   ├── eval/
+│   │   └── benchmark.py         # 5 held-out crisis seeds, before/after eval
 │   ├── training/
 │   │   ├── dpo_trainer.py       # DPO training loop (TRL + PEFT)
 │   │   ├── episode_collector.py # Collects episodes for training data
@@ -137,9 +164,16 @@ triage-backend/
 │   ├── db/                      # SQLAlchemy models + session management
 │   └── worker.py                # Celery background task worker
 ├── scripts/                     # Standalone utility scripts (see below)
+│   ├── train_grpo.py            # GRPO training with Unsloth + Qwen3-27B
+│   ├── build_grpo_dataset.py    # Generates 500 crisis scenario prompts
+│   └── demo_before_after.py     # Baseline vs fine-tuned comparison
 ├── notebooks/                   # Jupyter / Colab training notebooks
 ├── config/                      # YAML configuration files
 ├── data/                        # Dataset files and training outputs
+│   ├── drug_interactions.json   # Drug contraindication database
+│   ├── curriculum_state.json    # Persisted curriculum tier state
+│   ├── eval_history.jsonl       # Benchmark run history
+│   └── grpo_crisis_prompts/     # Arrow-format GRPO training dataset
 ├── models/                      # Saved model checkpoints
 ├── tests/                       # pytest test suite
 ├── pyproject.toml
@@ -175,10 +209,10 @@ state() ──► returns current EnvironmentState snapshot
 |-----|-------|-------------|
 | `patients` | `(50, 12)` | Patient status vectors (vitals, acuity, location) |
 | `resources` | `(8,)` | ICU beds, ventilators, blood, staff count, etc. |
-| `agent_states` | `(6, 8)` | Each agent's action/message counters |
+| `agent_states` | `(10, 8)` | Each agent's action/message counters |
 | `crisis_state` | `(10,)` | Crisis type, severity, time elapsed |
 | `policy_state` | `(20,)` | Active policy flags |
-| `expert_signals` | `(6,)` | Per-agent performance signals |
+| `expert_signals` | `(10,)` | Per-agent performance signals |
 
 #### Action Space (Discrete, 20 types)
 
@@ -220,18 +254,35 @@ state() ──► returns current EnvironmentState snapshot
 
 **File:** `triage/agents/specialized.py`
 
-Six agents, each inheriting from `BaseAgent`, collaborate through the `MessageBus`.
+Ten agents, each inheriting from `BaseAgent`, collaborate through the `MessageBus`.
+
+#### Agent Execution Order (per step)
+
+1. `AMBULANCE_DISPATCH` — controls patient inflow first
+2. `ER_TRIAGE` — intake and classify arriving patients
+3. `INFECTION_CONTROL` — isolate before ICU transfers
+4. `ICU_MANAGEMENT` — bed and ventilator allocation
+5. `PHARMACY` — medication orders
+6. `BLOOD_BANK` — blood inventory and requests
+7. `HR_ROSTERING` — staff scheduling
+8. `IT_SYSTEMS` — EHR and compliance
+9. `CMO_OVERSIGHT` — escalations and overrides
+10. `ETHICS_COMMITTEE` — audits all allocations LAST
 
 #### Agent Hierarchy
 
 ```
-CMO_OVERSIGHT  ──── supervisor, handles all escalations
+CMO_OVERSIGHT  ──── supervisor, handles escalations and overrides
      │
-     ├── ER_TRIAGE       ── intake, initial patient classification
-     ├── ICU_MANAGEMENT  ── bed allocation, ventilator management
-     ├── PHARMACY        ── medication dispensing, drug interaction checks
-     ├── HR_ROSTERING    ── staff scheduling, fatigue monitoring
-     └── IT_SYSTEMS      ── EHR integrity, schema drift detection, policy compliance
+     ├── AMBULANCE_DISPATCH ── controls inbound incidents and patient inflow
+     ├── ER_TRIAGE          ── intake, initial patient classification
+     ├── INFECTION_CONTROL  ── isolation, outbreak containment before transfers
+     ├── ICU_MANAGEMENT     ── bed allocation, ventilator management
+     ├── PHARMACY           ── medication dispensing, drug interaction checks
+     ├── BLOOD_BANK         ── blood inventory, compatibility, transfusion requests
+     ├── HR_ROSTERING       ── staff scheduling, fatigue monitoring
+     ├── IT_SYSTEMS         ── EHR integrity, schema drift detection, policy compliance
+     └── ETHICS_COMMITTEE   ── allocation audit and fairness review, runs last
 ```
 
 #### BaseAgent Contract
@@ -290,37 +341,101 @@ The reward model produces a scalar reward from a multi-component evaluation of t
 
 ---
 
+## Safety Constitution
+
+**File:** `triage/safety/constitution.py`
+
+A middleware layer that wraps every agent's output before actions reach the environment. Hard-blocks 10 categories of unsafe decisions and replaces them with safe fallbacks automatically.
+
+| Rule | Violation | Severity |
+|---|---|---|
+| Critical Patient Discharge | Discharging acuity >= 7 patient | 9 |
+| Drug Interaction | Contraindicated medication order | 8 |
+| Zero ICU Staff | Staff reduction leaving ICU unstaffed | 10 |
+| Ventilator Over-Allocation | Allocating ventilator when none available | 9 |
+| Blood Type Mismatch | Incompatible blood type transfusion | 10 |
+| Unauthorized CMO Override | Non-CMO agent issuing override | 7 |
+| Treatment Without Triage | Treatment before triage assessment | 6 |
+| ICU Transfer No Bed | ICU transfer when beds = 0 | 8 |
+| Medication Without Diagnosis | Prescribing with no diagnosis recorded | 7 |
+| Duplicate Critical Action | Same action on same patient twice in one step | 5 |
+
+Ablation mode: set `CONSTITUTION_ACTIVE=false` in `.env` to disable for A/B testing (shows chaos without safety layer — powerful demo).
+
+---
+
+## Curriculum Learning
+
+**File:** `triage/env/curriculum.py`
+
+Auto-advancing 5-tier difficulty system. Tier advances when mean reward over last 5 episodes > 0.7. Regresses when < 0.2.
+
+| Tier | Crisis Types | Patients | Compound Events |
+|---|---|---|---|
+| 1 | Mass Casualty only | 10-15 | No |
+| 2 | Mass Casualty + Staff Shortage | 20-25 | No |
+| 3 | Three crisis types | 30-35 | Yes |
+| 4 | All four crisis types | 40-45 | Yes + Schema Drift |
+| 5 | All types simultaneous | 48-50 | Maximum stress |
+
+State persists to `data/curriculum_state.json` across training runs.
+
+---
+
 ### Training Pipeline
 
 **Files:** `triage/training/`
 
-The complete DPO fine-tuning pipeline converts simulation episodes into training data for the language model:
+The training system is GRPO-first, with DPO retained as a secondary preference-alignment path:
 
 ```
+GRPO Crisis Prompts
+       │
+       ▼
+HospitalGRPOEnvironment ─── TRL environment_factory adapter
+       │
+       ▼
+AgentOrchestrator ─── ten agents produce structured tool actions
+       │
+       ▼
+SafetyConstitution ─── blocks unsafe actions, injects fallbacks
+       │
+       ▼
 HospitalEnv Episodes
        │
        ▼
-EpisodeCollector ─── runs N episodes, saves trajectory objects
+GRPO Verifiers ─── four independent binary checks + rule-based reward model
        │
        ▼
-PreferenceLabeler ─── compares episode pairs by total reward
-                  ─── higher reward episode → "chosen"
-                  ─── lower reward episode → "rejected"
+CurriculumScheduler ─── advances / regresses 5-tier crisis difficulty
        │
        ▼
-DatasetAdapter ─── converts to HuggingFace Dataset format
-                   {"prompt": ..., "chosen": ..., "rejected": ...}
+GRPOTrainer ─── TRL + Unsloth + Qwen3-27B
        │
        ▼
-TRIAGEDPOTrainer ─── LoRA + DPO on base model (Qwen2.5)
-                  ─── saves adapter to models/dpo_output/
+models/triage_grpo_output/ ─── LoRA adapter, optional merge to merged_grpo_final/
+
+DPO fallback path:
+EpisodeCollector → PreferenceLabeler → DatasetAdapter → TRIAGEDPOTrainer
 ```
+
+#### GRPO Configuration
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `model_name` | `Qwen/Qwen3-27B` | 48GB VRAM HuggingFace Spaces target |
+| `trainer` | `TRL GRPOTrainer` | Primary RLVR trainer |
+| `adapter` | `Unsloth LoRA` | Memory-efficient fine-tuning |
+| `dataset` | `data/grpo_crisis_prompts/` | Arrow-format crisis prompt dataset |
+| `environment_factory` | `HospitalGRPOEnvironment` | Live HospitalEnv rollout adapter |
+| `reward_funcs` | `triage.rewards.verifiers` | Independent verifier suite |
+| `curriculum_state` | `data/curriculum_state.json` | Persistent difficulty tier |
 
 #### DPO Configuration
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `model_name` | `Qwen/Qwen2.5-0.5B-Instruct` | Local (laptop); `1.5B` on Colab |
+| `model_name` | `Qwen/Qwen2.5-0.5B-Instruct` | Secondary preference-training baseline |
 | `beta` | `0.1` | DPO temperature (lower = closer to reference) |
 | `learning_rate` | `5e-5` | AdamW learning rate |
 | `epochs` | `1` | Laptop default (3 on Colab) |
@@ -348,7 +463,7 @@ TRIAGEDPOTrainer ─── LoRA + DPO on base model (Qwen2.5)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/agents/` | List all 6 agents and their states |
+| `GET` | `/api/agents/` | List all 10 agents and their states |
 | `POST` | `/api/agents/{type}/override` | Manually override an agent decision |
 
 #### Patients
@@ -403,7 +518,7 @@ TRIAGEDPOTrainer ─── LoRA + DPO on base model (Qwen2.5)
 |-------|------|-------------|
 | `/` | `index.tsx` | Landing / overview |
 | `/dashboard` | `dashboard.tsx` | Live simulation command center |
-| `/training` | `training.tsx` | DPO training monitor with live metrics |
+| `/training` | `training.tsx` | GRPO/DPO training monitor with live metrics |
 | `/visualizer` | `visualizer.tsx` | Step-by-step episode visualizer |
 | `/replay` | `replay.tsx` | Historical episode replay |
 | `/pitch` | `pitch.tsx` | Hackathon pitch deck |
@@ -426,38 +541,38 @@ TRIAGEDPOTrainer ─── LoRA + DPO on base model (Qwen2.5)
 - **Reward curve chart** — total episode reward over training time
 - **Crisis alert banner** — crisis type, severity, time elapsed
 - **Agent override controls** — manually inject CMO decisions
-- **Training monitor** — GPU utilization, VRAM, loss curve, step progress
+- **Training monitor** — GPU utilization, VRAM, loss curve, verifier rewards, step progress
 
 ---
 
 ## AI Training System
 
-### Local Training (Laptop — RTX 2050 / 4GB VRAM)
+### Local Training (Development / Smoke Test)
 
-The system supports local training on modest hardware using a quantized 0.5B model:
+The system supports local DPO and dataset smoke tests on modest hardware. Full GRPO training targets larger GPU infrastructure.
 
 ```bash
 cd triage-backend
 source .venv/bin/activate
-python scripts/train_dpo_gpu.py --epochs 1
+python scripts/build_grpo_dataset.py --num-prompts 500
+python scripts/train_dpo_gpu.py --epochs 1  # secondary DPO path
 ```
 
 The training script automatically:
-1. Loads existing `.jsonl` dataset from `data/`
-2. Applies 4-bit quantization (bitsandbytes) to fit in 4GB VRAM
+1. Loads GRPO prompts or existing `.jsonl` preference data from `data/`
+2. Applies quantized LoRA when running the local DPO fallback path
 3. Streams live progress to `data/training_live.json`
-4. Saves the LoRA adapter to `models/dpo_output_gpu/`
+4. Saves adapters under `models/`
 
-### Cloud Training (Google Colab — T4 / 15GB VRAM)
+### Cloud Training (HuggingFace Spaces — 48GB VRAM)
 
-For production-grade training on the `Qwen2.5-1.5B` model:
+For production-grade GRPO training on `Qwen/Qwen3-27B`:
 
-1. Open `notebooks/TRIAGE_Training_Colab.ipynb` in Google Colab
-2. **Runtime → Change runtime type → T4 GPU**
-3. Run all 3 cells in order:
-   - **Cell 1:** Install dependencies
-   - **Cell 2:** Download Kaggle datasets and build 6,000+ DPO pairs
-   - **Cell 3:** Train the 1.5B model with LoRA DPO
+1. Build or refresh crisis prompts with `scripts/build_grpo_dataset.py`
+2. Launch `scripts/train_grpo.py` with TRL + Unsloth
+3. Use `HospitalGRPOEnvironment` for live rollouts
+4. Track per-verifier rewards and curriculum tier progression
+5. Save the LoRA adapter to `models/triage_grpo_output/`
 
 ### Dataset Sources
 
@@ -467,9 +582,10 @@ For production-grade training on the `Qwen2.5-1.5B` model:
 | Pharma Drug Interactions | Kaggle (mdmahfuzsumon) | ~3,000 | Safe prescription pairs |
 | Healthcare Fraud Detection | Kaggle (nudratabbas) | ~5,000 | Claim validation pairs |
 | TRIAGE Episodes | Self-generated (simulation) | Variable | Core RL alignment |
+| GRPO Crisis Prompts | Self-generated (simulation) | 500+ | Live GRPO rollouts |
 | HuggingFace Medical DPO | HuggingFace Hub | ~2,000 | General medical reasoning |
 
-**Total training pairs after combining:** ~6,000–10,000 chosen/rejected pairs
+**Total DPO pairs after combining:** ~6,000–10,000 chosen/rejected pairs
 
 ---
 
@@ -527,18 +643,20 @@ curl -X POST http://localhost:8000/api/episodes/run \
   -d '{"crisis_type": "mass_casualty", "max_steps": 20}'
 ```
 
-### 5. Start DPO Training
+### 5. Start GRPO Training
 
 ```bash
-# Generate training data from episodes
-python scripts/collect_episodes.py
+# Generate GRPO crisis prompts
+python scripts/build_grpo_dataset.py --num-prompts 500
 
-# Start training
-python scripts/train_dpo_gpu.py --epochs 1
+# Start GRPO training
+python scripts/train_grpo.py
 
 # Monitor (in another terminal)
 watch -n 2 "cat data/training_live.json | python3 -m json.tool"
 ```
+
+For the secondary DPO path, use `scripts/collect_episodes.py` followed by `scripts/train_dpo_gpu.py --epochs 1`.
 
 ---
 
@@ -552,8 +670,11 @@ PORT=8000
 DEBUG=true
 
 # Model
-MODEL_NAME=Qwen/Qwen2.5-0.5B-Instruct
+MODEL_NAME=Qwen/Qwen3-27B
 USE_MOCK_LLM=true          # Set false to use real LLM
+
+# Safety
+CONSTITUTION_ACTIVE=true   # Set false for ablation demos
 
 # Database
 DATABASE_URL=sqlite+aiosqlite:///./triage.db
@@ -562,7 +683,9 @@ DATABASE_URL=sqlite+aiosqlite:///./triage.db
 REDIS_URL=redis://localhost:6379/0
 
 # Training
-TRAINING_OUTPUT_DIR=./models/dpo_output_gpu
+TRAINING_OUTPUT_DIR=./models/triage_grpo_output
+GRPO_TRAINING_MODE=false
+CURRICULUM_STATE_PATH=./data/curriculum_state.json
 DPO_EPOCHS=1
 DPO_BATCH_SIZE=1
 ```
@@ -580,8 +703,12 @@ Each agent's system prompt, tools, priority, and role are defined here. This is 
 | `scripts/run_episode.py` | Run a single simulation episode |
 | `scripts/run_simulation.py` | Run multiple episodes back-to-back |
 | `scripts/collect_episodes.py` | Collect episodes → save as trajectories |
+| `scripts/build_grpo_dataset.py` | Generate 500 crisis scenario prompts for GRPO |
+| `scripts/train_grpo.py` | GRPO training with TRL + Unsloth + Qwen3-27B |
+| `scripts/train_grpo_hf.py` | Self-contained GRPO training for HuggingFace compute |
 | `scripts/train_dpo.py` | Basic DPO training (CPU-safe) |
 | `scripts/train_dpo_gpu.py` | Full GPU DPO training with live metrics |
+| `scripts/demo_comparison.py` | Baseline vs GRPO-trained comparison |
 | `scripts/generate_dpo_fast.py` | Fast synthetic DPO dataset generation |
 | `scripts/generate_dpo_dataset_ollama.py` | Generate DPO data using Ollama (local LLM) |
 | `scripts/download_hf_dataset.py` | Pull medical DPO data from HuggingFace |
@@ -590,7 +717,7 @@ Each agent's system prompt, tools, priority, and role are defined here. This is 
 | `scripts/generate_training_report.py` | Generate HTML/markdown training report |
 | `scripts/demo.py` | Interactive demo script |
 | `scripts/colab_dpo_builder.py` | **For Colab:** Build massive Kaggle dataset |
-| `scripts/colab_train_dpo.py` | **For Colab:** Train 1.5B model on T4 GPU |
+| `scripts/colab_train_dpo.py` | **For Colab:** Train the secondary DPO baseline on T4 GPU |
 
 ---
 
@@ -598,8 +725,13 @@ Each agent's system prompt, tools, priority, and role are defined here. This is 
 
 ```
 triage-backend/data/
-├── training_live.json       # Live GPU training metrics (streamed by train_dpo_gpu.py)
+├── training_live.json       # Live GPU training metrics
+├── drug_interactions.json   # Drug contraindication database
+├── curriculum_state.json    # Persisted curriculum tier state
+├── eval_history.jsonl       # Benchmark run history
 ├── preference_dataset.json  # Labeled preference pairs for DPO
+├── grpo_crisis_prompts/     # Arrow-format GRPO training dataset
+├── grpo/                    # GRPO train/eval prompt files and comparisons
 ├── full_training/
 │   └── dpo_pairs.jsonl      # Combined DPO dataset (all sources)
 ├── episodes/                # Raw episode trajectories

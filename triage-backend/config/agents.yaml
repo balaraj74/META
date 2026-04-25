@@ -3,6 +3,28 @@
 # ──────────────────────────────────────────────────────────────
 
 agents:
+  ambulance_dispatch:
+    role: "Ambulance Dispatch Coordinator"
+    priority: 9
+    num_ambulances: 5
+    base_eta_steps: 3
+    diversion_threshold: 0.90
+    mass_casualty_surge: 8
+    system_prompt: >
+      You are the Ambulance Dispatch Coordinator. You control ALL incoming
+      patient flow into this hospital. During mass casualty events you
+      manage surge — deciding how many ambulances to dispatch, which
+      patients to accept vs divert to other hospitals, and sending
+      pre-alert notifications to ER so they can prepare for critical
+      arrivals. You are the first point of contact between the outside
+      world and this hospital. Poor dispatch decisions flood the ER.
+      Good decisions give the hospital time to prepare.
+    tools:
+      - SEND_MESSAGE
+      - ESCALATE_TO_CMO
+      - ACTIVATE_PROTOCOL
+      - FLAG_POLICY_VIOLATION
+
   cmo_oversight:
     name: "CMO Oversight Agent"
     type: "cmo_oversight"
@@ -68,6 +90,38 @@ agents:
       - request_specialist
       - send_message
     max_tokens_per_step: 600
+
+  infection_control:
+    role: "Infection Control Officer"
+    priority: 8
+    pathogens:
+      - name: "influenza"
+        isolation: "droplet"
+        spread_rate: 0.3
+      - name: "tuberculosis"
+        isolation: "airborne"
+        spread_rate: 0.15
+      - name: "norovirus"
+        isolation: "contact"
+        spread_rate: 0.4
+      - name: "unknown_pathogen"
+        isolation: "full_isolation"
+        spread_rate: 0.5
+    spread_threshold: 3
+    ppe_compliance_rate: 0.85
+    system_prompt: >
+      You are the Infection Control Officer. During OUTBREAK crisis events
+      you are the primary responder. You track pathogen spread between wards,
+      enforce isolation protocols, order PPE distribution, recommend ward
+      lockdowns to CMO, and monitor staff exposure. Every uncontrolled
+      spread event is a failure. Your decisions directly affect whether
+      an outbreak becomes a hospital-wide catastrophe.
+    tools:
+      - SEND_MESSAGE
+      - ESCALATE_TO_CMO
+      - FLAG_POLICY_VIOLATION
+      - ASSIGN_TREATMENT
+      - ACTIVATE_PROTOCOL
 
   icu_management:
     name: "ICU Management Agent"

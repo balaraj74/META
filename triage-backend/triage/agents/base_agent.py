@@ -22,6 +22,12 @@ from typing import Any, Optional
 import httpx
 
 from triage.agents.message_bus import MessageBus
+try:
+    from triage.agents.strategy_memory import StrategyMemory
+except Exception:  # pragma: no cover - optional ChromaDB dependency
+    class StrategyMemory:
+        def get_strategy_prompt(self, *args, **kwargs) -> str:
+            return ""
 from triage.env.state import (
     AgentAction,
     AgentMessage,
@@ -132,6 +138,11 @@ class BaseAgent(ABC):
 
         actions = []
         for tool in tool_calls:
+            if isinstance(tool, AgentAction):
+                self.actions_taken += 1
+                self._action_history.append(tool)
+                actions.append(tool)
+                continue
             tool_name = tool.__class__.__name__
             val_res = self.validator.validate(tool_name, tool.model_dump(), state)
             if isinstance(val_res, ValidatedAction):
@@ -242,9 +253,16 @@ class BaseAgent(ABC):
     ) -> dict[str, Any]:
         """Call the LLM with the agent's system prompt + context.
 
+        Backend priority (checked via env vars):
+          1. VERTEX_API_KEY  → Vertex AI Express REST (gemini-2.5-flash)
+          2. GOOGLE_API_KEY  → AI Studio generativelanguage REST
+          3. OLLAMA_MODEL    → local Ollama instance
+
         Returns parsed JSON response from the model.
         """
         full_prompt = f"""
+{self.system_prompt}
+
 {state_context}
 
 ---
@@ -256,27 +274,79 @@ Respond with a JSON object containing:
 - "messages": list of messages to send, each with "to_agent", "content", "msg_type", "priority"
 """
         t0 = time.perf_counter()
-        
+
+        vertex_key  = os.getenv("VERTEX_API_KEY")
+        google_key  = os.getenv("GOOGLE_API_KEY")
+
         try:
-            # Logic for Gemini
-            if "gemini" in self.model_name.lower():
-                import google.generativeai as genai
-                
-                model = genai.GenerativeModel(
-                    model_name=self.model_name,
-                    system_instruction=self.system_prompt,
-                    generation_config={
-                        "temperature": temperature,
-                        "response_mime_type": "application/json",
+            # ── 1. Vertex AI Express (REST via API key) ──────────────
+            if vertex_key:
+                vertex_model = os.getenv("VERTEX_MODEL", "gemini-2.5-flash")
+                url = (
+                    f"https://aiplatform.googleapis.com/v1beta1/publishers/google"
+                    f"/models/{vertex_model}:generateContent?key={vertex_key}"
+                )
+                payload = {
+                    "system_instruction": {
+                        "parts": [{"text": self.system_prompt}]
                     },
+                    "contents": [{"role": "user", "parts": [{"text": full_prompt}]}],
+                    "generationConfig": {
+                        "temperature": temperature,
+                        "responseMimeType": "application/json",
+                    },
+                }
+                async with httpx.AsyncClient(timeout=90.0) as client:
+                    resp = await client.post(
+                        url,
+                        json=payload,
+                        headers={"Content-Type": "application/json"},
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                logger.debug(
+                    "Agent %s VertexAI call (%s): tokens_in=%s tokens_out=%s",
+                    self.agent_type.value,
+                    vertex_model,
+                    data.get("usageMetadata", {}).get("promptTokenCount", "?"),
+                    data.get("usageMetadata", {}).get("candidatesTokenCount", "?"),
                 )
-                
-                response = await asyncio.to_thread(
-                    model.generate_content, full_prompt
+
+            # ── 2. AI Studio / Google Generative Language REST ───────
+            elif google_key:
+                ai_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+                url = (
+                    f"https://generativelanguage.googleapis.com/v1beta"
+                    f"/models/{ai_model}:generateContent?key={google_key}"
                 )
-                text = response.text
-                
-            # Logic for Ollama / Local LLM
+                payload = {
+                    "system_instruction": {
+                        "parts": [{"text": self.system_prompt}]
+                    },
+                    "contents": [{"role": "user", "parts": [{"text": full_prompt}]}],
+                    "generationConfig": {
+                        "temperature": temperature,
+                        "responseMimeType": "application/json",
+                    },
+                }
+                async with httpx.AsyncClient(timeout=90.0) as client:
+                    resp = await client.post(
+                        url,
+                        json=payload,
+                        headers={"Content-Type": "application/json"},
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                logger.debug(
+                    "Agent %s AIStudio call (%s): tokens=%s",
+                    self.agent_type.value,
+                    ai_model,
+                    data.get("usageMetadata", {}).get("totalTokenCount", "?"),
+                )
+
+            # ── 3. Ollama / Local LLM ────────────────────────────────
             else:
                 url = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
                 payload = {
@@ -285,31 +355,25 @@ Respond with a JSON object containing:
                     "system": self.system_prompt,
                     "stream": False,
                     "format": "json",
-                    "options": {
-                        "temperature": temperature,
-                    }
+                    "options": {"temperature": temperature},
                 }
-                
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     resp = await client.post(url, json=payload)
                     resp.raise_for_status()
                     data = resp.json()
-                    text = data.get("response", "{}")
+                text = data.get("response", "{}")
 
             elapsed = time.perf_counter() - t0
             tokens = len(text.split()) * 2
             self.total_tokens += tokens
 
-            logger.debug(
-                "Agent %s LLM call (%s): %d tokens, %.1fs",
-                self.agent_type.value, self.model_name, tokens, elapsed,
-            )
-
             return json.loads(text)
-            
+
         except Exception as e:
-            logger.warning("LLM call failed for %s (%s): %s", 
-                        self.agent_type.value, self.model_name, e)
+            logger.warning(
+                "LLM call failed for %s: %s",
+                self.agent_type.value, e,
+            )
             return {"actions": [], "messages": []}
 
     # ── Internal ─────────────────────────────────────────

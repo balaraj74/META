@@ -77,29 +77,32 @@ def _start_health_server(port: int = 7860) -> None:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 DEFAULTS = {
-    # Model — Qwen3.5-27B with 4-bit quantization via load_in_4bit=True
-    # Requires transformers>=5.2.0 (upgraded in Dockerfile)
-    "model": "unsloth/Qwen3.5-27B",
+    # Model — Qwen3.5-9B (latest gen, 4-bit quantization via load_in_4bit=True)
+    # 9B 4-bit fits on L40S-44GB with GRPO overhead
+    "model": "unsloth/Qwen3.5-9B",
     "max_seq_length": 512,
 
-    # LoRA — reduced rank for 27B on 48GB
-    "lora_r": 16,
-    "lora_alpha": 16,
+    # LoRA — higher rank feasible with 9B
+    "lora_r": 32,
+    "lora_alpha": 32,
     "lora_dropout": 0,
     "lora_targets": [
         "q_proj", "k_proj", "v_proj", "o_proj",
         "gate_proj", "up_proj", "down_proj",
     ],
 
-    # GRPO — minimal generation for 27B on L40S 48GB
-    "num_generations": 2,
-    "max_completion_length": 128,
+    # GRPO — tuned for L40S 44GB
+    # Unsloth forces per_device_train_batch_size = num_generations
+    # So actual VRAM per step = num_gen × (prompt + completion) tokens × KV-cache
+    "num_generations": 4,
+    "max_completion_length": 200,
     "temperature": 0.9,
 
-    # Training — conservative to avoid OOM
+    # Training — L40S 44GB budget
+    # Effective batch = num_gen(4) × grad_accum(8) = 32
     "epochs": 3,
-    "batch_size": 1,
-    "grad_accum": 1,
+    "batch_size": 2,
+    "grad_accum": 8,
     "lr": 5e-6,
     "logging_steps": 1,
     "save_steps": 200,
@@ -467,7 +470,7 @@ def _augment_from_hf(max_per_source: int) -> list[str]:
 
     for repo, config, fields in _HF_SOURCES:
         try:
-            kwargs = {"split": "train", "streaming": True, "trust_remote_code": True}
+            kwargs = {"split": "train", "streaming": True}
             if config:
                 kwargs["name"] = config
             ds = load_dataset(repo, **kwargs)

@@ -68,7 +68,7 @@ def _start_health_server(port: int = 7860):
 DEFAULTS = {
     # Model — MUST be identical to Account 1
     "model": "unsloth/Qwen3.5-27B",
-    "max_seq_length": 512,
+    "max_seq_length": 1024,  # V2 FIX: 512→1024 to avoid V1 truncation
 
     # LoRA — MUST match Account 1 architecture for merge compatibility
     "lora_r": 16,
@@ -81,13 +81,13 @@ DEFAULTS = {
 
     # GRPO — same constraints for L40S 48GB
     "num_generations": 2,
-    "max_completion_length": 128,
+    "max_completion_length": 256,  # V2 FIX: 128→256 for full JSON+reasoning
     "temperature": 0.9,
 
     # Training
     "epochs": 3,
-    "batch_size": 1,
-    "grad_accum": 1,
+    "batch_size": 2,  # A100 80GB can handle batch=2
+    "grad_accum": 2,  # V2 FIX: smoother gradients with effective batch=2
     "lr": 5e-6,
     "logging_steps": 1,
     "save_steps": 200,
@@ -218,24 +218,47 @@ def load_dataset_prompts(path: str) -> list[str]:
 # V2 AUGMENTATION — EXPANDED CLINICAL + ETHICS FOCUS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# V2 uses DIFFERENT datasets than V1 for complementary coverage
+# V2 uses EXPANDED datasets — 24 sources for maximum diversity
 _HF_SOURCES_V2 = [
-    # Heavy medical reasoning (shared with V1 but different sampling seed)
+    # ── Medical Reasoning & QA ────────────────────────────────────────────
+    ("TachyHealth/structured_medical", None, ["question", "input", "text", "instruction"]),
+    ("YuSun-AI/ReasonMed", None, ["question", "input", "prompt", "text"]),
+    ("TsinghuaC3I/MedXpertQA", "MM", ["question", "input", "text"]),
+    ("mamachang/medical-reasoning", None, ["question", "input", "instruction", "text"]),
+    ("GBaker/MedQA-USMLE-4-options", None, ["question"]),
+    ("bigbio/med_qa", "med_qa_en_4options_bigbio_qa", ["question_text", "question", "text"]),
+
+    # ── Clinical Notes & Patient Data ─────────────────────────────────────
+    ("starmpcc/Asclepius-Synthetic-Clinical-Notes", None, ["note", "text", "input", "clinical_note"]),
+    ("zhengyun21/PMC-Patients", None, ["patient", "text", "case", "input"]),
+    ("BI55/MedText", None, ["text", "input", "medical_text"]),
+
+    # ── Pharmacology & Drug Safety ────────────────────────────────────────
+    ("roysc/medication_qa", None, ["Question", "question", "text"]),
+    ("bigbio/cadec", "cadec_bigbio_kb", ["text", "input"]),
+    ("bigbio/pharmaconer", "pharmaconer_bigbio_kb", ["text", "input"]),
+    ("blaze999/Medical-NER", None, ["text", "sentence", "input"]),
+
+    # ── Crisis & Emergency ────────────────────────────────────────────────
+    ("QCRI/CrisisMMD", None, ["text", "tweet_text", "caption", "input"]),
+
+    # ── Ethics, Safety & Alignment ────────────────────────────────────────
+    ("allenai/prosocial-dialog", None, ["context", "response", "text", "input"]),
+    ("declare-lab/cicero", None, ["context", "question", "text", "input"]),
+    ("PKU-Alignment/PKU-SafeRLHF", None, ["prompt", "response_0", "input", "text"]),
+
+    # ── General Instruction & Reasoning ───────────────────────────────────
+    ("Aeala/ShareGPT_Vicuna_unfiltered", None, ["text", "input", "instruction"]),
+    ("knowledgator/events-instruct", None, ["text", "input", "instruction"]),
+    ("Juyong/FLANV2", None, ["input", "text", "instruction", "question"]),
+
+    # ── Clinical NLP & De-identification ──────────────────────────────────
+    ("bigbio/n2c2_2014_deid", "n2c2_2014_deid_bigbio_text", ["text", "document"]),
+
+    # ── Medical GRPO (shared with V1, different seed) ─────────────────────
     ("TachyHealth/medical_grpo", None, ["question", "input", "prompt"]),
     ("Intelligent-Internet/II-Medical-RL", None, ["question", "prompt"]),
     ("BAAI/AquilaMed-RL", None, ["instruction", "input"]),
-    # More clinical data — V2 exclusive or higher max_per_source
-    ("openlifescienceai/medmcqa", None, ["question"]),
-    ("sdiazlor/medical-reasoning-dataset", None, ["question", "input"]),
-    ("lavita/ChatDoctor-HealthCareMagic-100k", None, ["input", "instruction"]),
-    # Ethics — V2 gets ALL splits (not just 2)
-    ("hendrycks/ethics", "utilitarianism", ["input", "text"]),
-    ("hendrycks/ethics", "deontology", ["input", "scenario"]),
-    ("hendrycks/ethics", "justice", ["input", "scenario"]),
-    ("hendrycks/ethics", "virtue", ["input", "scenario"]),
-    # Clinical NLP & reasoning
-    ("bigbio/pubmed_qa", "pubmed_qa_labeled_fold0_source", ["question", "context"]),
-    ("GBaker/MedQA-USMLE-4-options", None, ["question"]),
 ]
 
 _AUG_AGENTS = ["er_triage", "icu_management", "pharmacy", "cmo_oversight", "hr_rostering", "it_systems"]
@@ -445,7 +468,7 @@ def main():
         max_completion_length=DEFAULTS["max_completion_length"],
         temperature=DEFAULTS["temperature"],
         use_vllm=True,
-        vllm_gpu_memory_utilization=0.75,
+        vllm_gpu_memory_utilization=0.85,  # A100 80GB — plenty of headroom
     )
 
     trainer = GRPOTrainer(

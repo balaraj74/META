@@ -46,6 +46,7 @@ from triage.api.schemas import (
 from triage.env.hospital_env import HospitalEnv
 from triage.env.state import AgentType, CrisisType
 from triage.agents.message_bus import MessageBus
+from triage.agents.orchestrator import AGENT_STEP_ORDER
 from triage.agents.specialized import create_all_agents
 from triage.rewards.reward_model import RewardModel
 from triage.training.episode_collector import EpisodeCollector
@@ -157,7 +158,7 @@ class SimulationManager:
 
         # Collect actions from all agents
         all_actions = []
-        for agent_type in AgentType:
+        for agent_type in AGENT_STEP_ORDER:
             agent = self.agents.get(agent_type)
             if agent:
                 try:
@@ -219,6 +220,20 @@ class SimulationManager:
                     data=_serialize_decision(decision)
                 ))
 
+        for event in state_after.infection_events:
+            if event.step == state_after.step_count:
+                await self._broadcast(WSMessage(
+                    type="infection_spread",
+                    data={
+                        "event_id": event.event_id,
+                        "source_patient": event.source_patient_id,
+                        "infected_patient": event.infected_patient_id,
+                        "ward": event.ward,
+                        "pathogen": event.pathogen,
+                        "prevented": event.prevented,
+                        "step": event.step,
+                    },
+                ))
 
         if terminated:
             self.status = SimulationStatus.COMPLETED

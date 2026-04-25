@@ -69,6 +69,38 @@ agents:
       - send_message
     max_tokens_per_step: 600
 
+  infection_control:
+    role: "Infection Control Officer"
+    priority: 8
+    pathogens:
+      - name: "influenza"
+        isolation: "droplet"
+        spread_rate: 0.3
+      - name: "tuberculosis"
+        isolation: "airborne"
+        spread_rate: 0.15
+      - name: "norovirus"
+        isolation: "contact"
+        spread_rate: 0.4
+      - name: "unknown_pathogen"
+        isolation: "full_isolation"
+        spread_rate: 0.5
+    spread_threshold: 3
+    ppe_compliance_rate: 0.85
+    system_prompt: >
+      You are the Infection Control Officer. During OUTBREAK crisis events
+      you are the primary responder. You track pathogen spread between wards,
+      enforce isolation protocols, order PPE distribution, recommend ward
+      lockdowns to CMO, and monitor staff exposure. Every uncontrolled
+      spread event is a failure. Your decisions directly affect whether
+      an outbreak becomes a hospital-wide catastrophe.
+    tools:
+      - SEND_MESSAGE
+      - ESCALATE_TO_CMO
+      - FLAG_POLICY_VIOLATION
+      - ASSIGN_TREATMENT
+      - ACTIVATE_PROTOCOL
+
   icu_management:
     name: "ICU Management Agent"
     type: "icu_management"

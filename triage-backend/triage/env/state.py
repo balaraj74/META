@@ -38,9 +38,18 @@ class WardType(str, Enum):
     TRIAGE = "TRIAGE"
 
 
+class IsolationStatus(str, Enum):
+    NONE = "none"
+    DROPLET = "droplet"
+    AIRBORNE = "airborne"
+    CONTACT = "contact"
+    FULL = "full_isolation"
+
+
 class AgentType(str, Enum):
     CMO_OVERSIGHT = "cmo_oversight"
     ER_TRIAGE = "er_triage"
+    INFECTION_CONTROL = "infection_control"
     ICU_MANAGEMENT = "icu_management"
     PHARMACY = "pharmacy"
     HR_ROSTERING = "hr_rostering"
@@ -150,6 +159,14 @@ class Patient:
     last_updated: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     history: list[PatientEvent] = field(default_factory=list)
     deterioration_rate: float = 0.0  # per-step probability of getting worse
+
+    @property
+    def acuity_score(self) -> int:
+        return self.triage_score
+
+    @acuity_score.setter
+    def acuity_score(self, value: int) -> None:
+        self.triage_score = value
 
     def add_event(self, event_type: str, description: str, agent: AgentType | None = None) -> None:
         self.history.append(
@@ -485,6 +502,28 @@ class SafetyBlock:
             "severity": self.severity,
         }
 
+
+@dataclass
+class InfectionEvent:
+    event_id: str
+    step: int
+    source_patient_id: str
+    infected_patient_id: str
+    ward: str
+    pathogen: str
+    prevented: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "event_id": self.event_id,
+            "step": self.step,
+            "source_patient_id": self.source_patient_id,
+            "infected_patient_id": self.infected_patient_id,
+            "ward": self.ward,
+            "pathogen": self.pathogen,
+            "prevented": self.prevented,
+        }
+
 # ─── Main State ──────────────────────────────────────────────
 
 
@@ -563,6 +602,9 @@ class EnvironmentState:
     override_tokens: dict[str, AuthorizationToken] = field(default_factory=dict)
     pending_patients: list[Patient] = field(default_factory=list)  # incoming queue
     rationing_decisions: list[RationingDecision] = field(default_factory=list)
+    infection_events: list[InfectionEvent] = field(default_factory=list)
+    ward_lockdowns: dict[str, bool] = field(default_factory=dict)
+    active_pathogens: list[str] = field(default_factory=list)
     violations_injected: int = 0
     violations_caught: int = 0
     step_count: int = 0
@@ -600,6 +642,8 @@ class EnvironmentState:
                     "verbal_order_timeout_minutes": 60,
                 },
             }
+        if not self.ward_lockdowns:
+            self.ward_lockdowns = {"ER": False, "ICU": False, "WARD": False, "ISOLATION": False}
 
     # ── Computed Properties ──────────────────────────────
 
@@ -769,6 +813,9 @@ class EnvironmentState:
             "recent_drift_events": self.drift_history[-10:],
             "app_audit_log": [event.to_dict() for event in self.app_audit_log[-25:]],
             "override_tokens": [token.to_dict() for token in self.override_tokens.values() if token.active],
+            "infection_events": [event.to_dict() for event in self.infection_events[-25:]],
+            "ward_lockdowns": self.ward_lockdowns,
+            "active_pathogens": self.active_pathogens,
             "stats": {
                 "alive_count": self.alive_count,
                 "deceased_count": self.deceased_count,

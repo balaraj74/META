@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from triage.env.state import AgentAction, EnvironmentState
+from triage.env.state import ActionType, AgentAction, EnvironmentState
 from triage.reward.components import (
     AdaptationReward,
     ComplianceReward,
@@ -37,6 +37,7 @@ class RewardBreakdown:
     blood_management: float = 0.0
     ethics_compliance: float = 0.0
     safety_compliance: float = 0.0
+    infection_control: float = 0.0
     penalties: float = 0.0
     workflow_bonus: float = 0.0
     terminal_bonus: float = 0.0
@@ -56,6 +57,7 @@ class RewardBreakdown:
             "blood_management": round(self.blood_management, 4),
             "ethics_compliance": round(self.ethics_compliance, 4),
             "safety_compliance": round(self.safety_compliance, 4),
+            "infection_control": round(self.infection_control, 4),
             "penalties": round(self.penalties, 4),
             "workflow_bonus": round(self.workflow_bonus, 4),
             "terminal_bonus": round(self.terminal_bonus, 4),
@@ -81,13 +83,14 @@ class RewardModel:
     """Production reward model with prompt-aligned component names."""
 
     DEFAULT_WEIGHTS = {
-        "survival": 0.35,
+        "survival": 0.25,
         "safety_compliance": 0.15,
         "depth": 0.15,
         "oversight": 0.10,
         "compliance": 0.10,
         "ethics_compliance": 0.10,
-        "coordination": 0.05,
+        "coordination": 0.10,
+        "infection_control": 0.05,
         "blood_management": 0.0,
         "adaptation": 0.0,
         "expert_alignment": 0.0,
@@ -136,6 +139,7 @@ class RewardModel:
         breakdown.blood_management = self._compute_blood_management(state)
         breakdown.ethics_compliance = self._compute_ethics_compliance(state)
         breakdown.safety_compliance = self._compute_safety_compliance(state)
+        breakdown.infection_control = self._compute_infection_control(state)
         workflow_penalties, penalty_details = self._workflow_penalties(app_audits, action_result)
         breakdown.penalties = self._penalties(state) + workflow_penalties
         breakdown.workflow_bonus = self._workflow_bonus(messages, app_audits, action_result)
@@ -152,6 +156,7 @@ class RewardModel:
             + effective_weights.get("blood_management", 0) * breakdown.blood_management
             + effective_weights.get("ethics_compliance", 0) * breakdown.ethics_compliance
             + effective_weights.get("safety_compliance", 0) * breakdown.safety_compliance
+            + effective_weights.get("infection_control", 0) * breakdown.infection_control
         )
         breakdown.total = (
             weighted_base
@@ -345,6 +350,35 @@ class RewardModel:
             
         rew += 0.15 * fulfilled
         return rew
+
+    def _compute_infection_control(self, state: EnvironmentState) -> float:
+        current_events = [
+            event for event in getattr(state, "infection_events", [])
+            if event.step == state.step_count
+        ]
+        reward = 0.10 if not current_events else 0.0
+        reward -= 0.15 * sum(1 for event in current_events if not event.prevented)
+
+        if getattr(state.crisis, "type", None) and state.crisis.type.value == "outbreak":
+            infected = [
+                patient for patient in state.patients
+                if any(
+                    token in patient.condition.lower()
+                    for token in ("infect", "viral", "pneumonia", "meningitis", "fever", "gastroenteritis", "pathogen")
+                )
+            ]
+            if infected and all(
+                any(str(plan).startswith("ISOLATION_ORDER:") for plan in patient.treatment_plan)
+                for patient in infected
+            ):
+                reward += 0.20
+
+        reward -= 0.25 * sum(
+            1
+            for event in current_events
+            if state.ward_lockdowns.get(event.ward) and not event.prevented
+        )
+        return reward
 
     def _compute_ethics_compliance(self, state: EnvironmentState) -> float:
         rew = 0.0

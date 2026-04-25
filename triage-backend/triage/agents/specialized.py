@@ -13,7 +13,10 @@ Agent Hierarchy:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import random
+import uuid
 from typing import Any
 
 from pydantic import BaseModel
@@ -25,7 +28,10 @@ from triage.env.state import (
     AgentAction,
     AgentMessage,
     AgentType,
+    CrisisType,
     EnvironmentState,
+    InfectionEvent,
+    IsolationStatus,
     MessageType,
     PatientStatus,
 )
@@ -228,6 +234,250 @@ class ERTriageAgent(BaseAgent):
 
 
 # ─── ICU Management Agent ───────────────────────────────────
+
+class InfectionControlAgent(BaseAgent):
+    """Infection control officer for outbreak containment."""
+
+    WARDS = ["ER", "ICU", "WARD", "ISOLATION"]
+
+    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True, model_name: str | None = None) -> None:
+        super().__init__(AgentType.INFECTION_CONTROL, config, bus, mock_llm, model_name)
+        pathogens = config.get("pathogens", [])
+        self.pathogen_db: dict[str, dict[str, Any]] = {
+            item.get("name", "unknown_pathogen"): item for item in pathogens
+        } or {
+            "unknown_pathogen": {
+                "name": "unknown_pathogen",
+                "isolation": IsolationStatus.FULL.value,
+                "spread_rate": 0.5,
+            }
+        }
+        self.ward_case_counts: dict[str, int] = {ward: 0 for ward in self.WARDS}
+        self.isolated_patients: set[str] = set()
+        self.lockdown_wards: set[str] = set()
+        self.exposure_log: list[dict[str, Any]] = []
+        self.SPREAD_THRESHOLD = int(config.get("spread_threshold", 3))
+        self.ppe_compliance_rate = float(config.get("ppe_compliance_rate", 0.85))
+        self._rng = random.Random(config.get("seed", 17))
+
+    async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
+        if self.mock_llm:
+            return self._rule_based_decision(state, inbox)
+        context = self._build_state_context(state)
+        infection_context = json.dumps(
+            {
+                "ward_case_counts": self.ward_case_counts,
+                "isolated_patients": sorted(self.isolated_patients),
+                "active_pathogens": state.active_pathogens,
+            }
+        )
+        raw = await self._call_llm(
+            self.config.get("system_prompt", "Manage infection control."),
+            f"{context}\nInfection Control Context:\n{infection_context}",
+        )
+        parsed = self._parse_llm_response(raw)
+        return parsed or self._rule_based_decision(state, inbox)
+
+    def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
+        actions: list[BaseModel] = []
+
+        if state.crisis.type == CrisisType.OUTBREAK:
+            newly_infected = self._detect_new_spread(state)
+            for patient in newly_infected:
+                pathogen = self._patient_pathogen(patient, state)
+                isolation_level = self._isolation_for(pathogen)
+                if patient.id not in self.isolated_patients:
+                    treatment = f"ISOLATION_ORDER:{isolation_level}"
+                    if treatment not in patient.treatment_plan:
+                        patient.treatment_plan.append(treatment)
+                    self.isolated_patients.add(patient.id)
+                    actions.append(AssignTreatmentTool(
+                        patient_id=patient.id,
+                        treatment_plan=treatment,
+                        reasoning=f"ISOLATION_ORDER:{isolation_level} for {pathogen}",
+                    ))
+                    message = (
+                        f"ISOLATION_ORDER: Patient {patient.id} requires {isolation_level} "
+                        f"isolation for {pathogen}. Move to isolation ward immediately."
+                    )
+                    actions.append(SendMessageTool(to_agent=AgentType.ER_TRIAGE.value, content=message, urgency=8))
+                    actions.append(SendMessageTool(to_agent=AgentType.ICU_MANAGEMENT.value, content=message, urgency=8))
+
+            for ward, count in self.ward_case_counts.items():
+                if count >= self.SPREAD_THRESHOLD and ward not in self.lockdown_wards:
+                    pathogen = self._active_pathogen(state)
+                    summary = (
+                        f"LOCKDOWN_RECOMMENDED: {ward} has {count} confirmed cases "
+                        f"of {pathogen}. Recommend immediate lockdown and patient transfer freeze."
+                    )
+                    self.lockdown_wards.add(ward)
+                    state.ward_lockdowns[ward] = True
+                    actions.append(EscalateToCMOTool(patient_id=None, urgency=9, summary=summary))
+
+            for event in state.infection_events:
+                if event.step == state.step_count and state.ward_lockdowns.get(event.ward) and not event.prevented:
+                    actions.append(FlagPolicyViolationTool(
+                        violation_type="ISOLATION_BREACH",
+                        description=(
+                            f"ISOLATION_BREACH: New case in locked-down {event.ward}. "
+                            "PPE failure or unauthorized entry suspected."
+                        ),
+                        affected_patient_id=event.infected_patient_id,
+                    ))
+
+            self._simulate_spread(state)
+
+        if state.step_count % 3 == 0:
+            active_wards = [ward for ward, count in self.ward_case_counts.items() if count > 0]
+            isolation_level = self._isolation_for(self._active_pathogen(state))
+            actions.append(SendMessageTool(
+                to_agent=AgentType.HR_ROSTERING.value,
+                content=(
+                    f"PPE_AUDIT: Current compliance rate {self.ppe_compliance_rate * 100:.0f}%. "
+                    f"All staff in {active_wards or ['ALL']} require {isolation_level} PPE. "
+                    "Non-compliant staff must be reassigned."
+                ),
+                urgency=6,
+            ))
+
+        return actions[:12]
+
+    def _detect_new_spread(self, state: EnvironmentState) -> list[Any]:
+        newly_infected: list[Any] = []
+        for ward in self.WARDS:
+            patients = [
+                p for p in state.patients
+                if self._ward_key(p.ward.value) == ward and self._is_infectious(p, state)
+            ]
+            count = len(patients)
+            previous = self.ward_case_counts.get(ward, 0)
+            if count > previous:
+                for patient in patients[previous:count]:
+                    state.infection_events.append(InfectionEvent(
+                        event_id=str(uuid.uuid4()),
+                        step=state.step_count,
+                        source_patient_id=self._source_patient_id(state, ward, patient.id),
+                        infected_patient_id=patient.id,
+                        ward=ward,
+                        pathogen=self._patient_pathogen(patient, state),
+                    ))
+                    newly_infected.append(patient)
+            self.ward_case_counts[ward] = count
+        return newly_infected
+
+    def _simulate_spread(self, state: EnvironmentState) -> None:
+        pathogen = self._active_pathogen(state)
+        spread_rate = float(self.pathogen_db.get(pathogen, {}).get("spread_rate", 0.5))
+        effective_rate = spread_rate * (1.0 - self.ppe_compliance_rate)
+        for ward in self.WARDS:
+            infectious = [
+                p for p in state.patients
+                if self._ward_key(p.ward.value) == ward and self._is_infectious(p, state)
+            ]
+            if not infectious:
+                continue
+            for patient in state.patients:
+                if self._ward_key(patient.ward.value) != ward:
+                    continue
+                if patient.id in self.isolated_patients or self._is_infectious(patient, state):
+                    continue
+                roll = self._rng.random()
+                self.exposure_log.append({
+                    "step": state.step_count,
+                    "ward": ward,
+                    "patient_id": patient.id,
+                    "pathogen": pathogen,
+                    "roll": roll,
+                    "threshold": effective_rate,
+                })
+                if roll < effective_rate:
+                    patient.condition = f"{pathogen} exposure"
+                    if patient.status == PatientStatus.STABLE:
+                        patient.status = PatientStatus.SERIOUS
+                    state.infection_events.append(InfectionEvent(
+                        event_id=str(uuid.uuid4()),
+                        step=state.step_count,
+                        source_patient_id=infectious[0].id,
+                        infected_patient_id=patient.id,
+                        ward=ward,
+                        pathogen=pathogen,
+                    ))
+                    self.ward_case_counts[ward] = self.ward_case_counts.get(ward, 0) + 1
+
+    def _parse_llm_response(self, raw: Any) -> list[BaseModel]:
+        response = raw if isinstance(raw, dict) else {}
+        actions: list[BaseModel] = []
+        for item in response.get("actions", []):
+            try:
+                action_type = str(item.get("action_type", "")).upper()
+                if action_type == "ASSIGN_TREATMENT":
+                    actions.append(AssignTreatmentTool(
+                        patient_id=str(item["patient_id"]),
+                        treatment_plan=str(item.get("treatment_plan", "ISOLATION_ORDER:full_isolation")),
+                        reasoning=str(item.get("reasoning", "Infection control isolation order")),
+                    ))
+                elif action_type == "SEND_MESSAGE":
+                    actions.append(SendMessageTool(
+                        to_agent=str(item.get("to_agent", AgentType.HR_ROSTERING.value)),
+                        content=str(item.get("content", "")),
+                        urgency=int(item.get("urgency", item.get("priority", 6))),
+                    ))
+                elif action_type == "ESCALATE_TO_CMO":
+                    actions.append(EscalateToCMOTool(
+                        patient_id=item.get("patient_id"),
+                        urgency=int(item.get("urgency", item.get("priority", 8))),
+                        summary=str(item.get("summary", item.get("reasoning", ""))),
+                    ))
+                elif action_type == "FLAG_POLICY_VIOLATION":
+                    actions.append(FlagPolicyViolationTool(
+                        violation_type=str(item.get("violation_type", "ISOLATION_BREACH")),
+                        description=str(item.get("description", item.get("reasoning", ""))),
+                        affected_patient_id=item.get("affected_patient_id"),
+                    ))
+            except Exception:
+                continue
+        return actions
+
+    def _active_pathogen(self, state: EnvironmentState) -> str:
+        if state.active_pathogens:
+            return state.active_pathogens[0]
+        return max(self.pathogen_db.items(), key=lambda item: float(item[1].get("spread_rate", 0.0)))[0]
+
+    def _patient_pathogen(self, patient: Any, state: EnvironmentState) -> str:
+        condition = patient.condition.lower()
+        for pathogen in self.pathogen_db:
+            if pathogen in condition:
+                if pathogen not in state.active_pathogens:
+                    state.active_pathogens.append(pathogen)
+                return pathogen
+        return self._active_pathogen(state)
+
+    def _isolation_for(self, pathogen: str) -> str:
+        return str(self.pathogen_db.get(pathogen, {}).get("isolation", IsolationStatus.FULL.value))
+
+    def _is_infectious(self, patient: Any, state: EnvironmentState) -> bool:
+        text = patient.condition.lower()
+        pathogen_hit = any(pathogen in text for pathogen in self.pathogen_db)
+        clinical_hit = any(
+            token in text
+            for token in ("infect", "viral", "pneumonia", "meningitis", "fever", "gastroenteritis", "tuberculosis", "norovirus")
+        )
+        return pathogen_hit or (state.crisis.type == CrisisType.OUTBREAK and clinical_hit)
+
+    def _source_patient_id(self, state: EnvironmentState, ward: str, infected_patient_id: str) -> str:
+        for patient in state.patients:
+            if patient.id != infected_patient_id and self._ward_key(patient.ward.value) == ward and self._is_infectious(patient, state):
+                return patient.id
+        return infected_patient_id
+
+    @staticmethod
+    def _ward_key(ward: str) -> str:
+        if ward in {"WARD_A", "WARD_B", "WARD"}:
+            return "WARD"
+        if ward == "TRIAGE":
+            return "ER"
+        return ward
+
 
 class ICUManagementAgent(BaseAgent):
     """ICU bed and ventilator management specialist.
@@ -535,8 +785,8 @@ class ITSystemsAgent(BaseAgent):
 class BloodBankAgent(BaseAgent):
     """Blood Bank Manager."""
 
-    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True) -> None:
-        super().__init__(AgentType.BLOOD_BANK, config, bus, mock_llm)
+    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True, model_name: str | None = None) -> None:
+        super().__init__(AgentType.BLOOD_BANK, config, bus, mock_llm, model_name)
         self.inventory: dict[str, int] = {
             "O+": 20, "O-": 10, "A+": 15, "A-": 8, "B+": 12, "B-": 6, "AB+": 5, "AB-": 3
         }
@@ -660,8 +910,8 @@ class BloodBankAgent(BaseAgent):
 class EthicsCommitteeAgent(BaseAgent):
     """Ethics Committee Oversight Agent."""
 
-    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True) -> None:
-        super().__init__(AgentType.ETHICS_COMMITTEE, config, bus, mock_llm)
+    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True, model_name: str | None = None) -> None:
+        super().__init__(AgentType.ETHICS_COMMITTEE, config, bus, mock_llm, model_name)
         from triage.env.state import EthicalFramework
         self.framework = EthicalFramework(self.config.get("ethical_framework", "utilitarian"))
         self.rationing_log = []
@@ -873,6 +1123,7 @@ class EthicsCommitteeAgent(BaseAgent):
 AGENT_CLASSES: dict[AgentType, type[BaseAgent]] = {
     AgentType.CMO_OVERSIGHT: CMOOversightAgent,
     AgentType.ER_TRIAGE: ERTriageAgent,
+    AgentType.INFECTION_CONTROL: InfectionControlAgent,
     AgentType.ICU_MANAGEMENT: ICUManagementAgent,
     AgentType.PHARMACY: PharmacyAgent,
     AgentType.HR_ROSTERING: HRRosteringAgent,

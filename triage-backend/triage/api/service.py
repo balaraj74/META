@@ -162,6 +162,25 @@ class BackendService:
         if result.drift_events:
             for drift_event in result.drift_events:
                 await self._broadcast("drift_event", {"episode_id": episode_id, "event": drift_event})
+
+        new_infections = [
+            event.to_dict()
+            for event in session.orchestrator.state.infection_events
+            if event.step == session.orchestrator.state.step_count
+        ]
+        for event in new_infections:
+            await self._broadcast(
+                "infection_spread",
+                {
+                    "event_id": event["event_id"],
+                    "source_patient": event["source_patient_id"],
+                    "infected_patient": event["infected_patient_id"],
+                    "ward": event["ward"],
+                    "pathogen": event["pathogen"],
+                    "prevented": event["prevented"],
+                    "step": event["step"],
+                },
+            )
                 
         new_blocks = [b.to_dict() for b in session.orchestrator.state.safety_blocks if b.step == session.orchestrator.state.step_count]
         for block in new_blocks:
@@ -341,6 +360,28 @@ class BackendService:
         if session is None:
             return []
         return session.orchestrator.get_agent_messages(agent_type)
+
+    def get_infection_status(self) -> dict[str, Any]:
+        session = self.get_latest_episode()
+        if session is None:
+            return {
+                "ward_case_counts": {},
+                "lockdown_wards": [],
+                "isolated_patients": 0,
+                "total_infection_events": 0,
+                "prevention_rate": 0.0,
+            }
+        state = session.orchestrator.state
+        agent = session.orchestrator.agents.get(AgentType.INFECTION_CONTROL)
+        total = len(state.infection_events)
+        prevented = sum(1 for event in state.infection_events if event.prevented)
+        return {
+            "ward_case_counts": getattr(agent, "ward_case_counts", {}),
+            "lockdown_wards": sorted(getattr(agent, "lockdown_wards", set())),
+            "isolated_patients": len(getattr(agent, "isolated_patients", set())),
+            "total_infection_events": total,
+            "prevention_rate": prevented / total if total else 0.0,
+        }
 
     def get_message_bus_stats(self) -> dict[str, Any]:
         session = self.get_latest_episode()

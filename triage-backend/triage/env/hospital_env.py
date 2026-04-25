@@ -218,6 +218,9 @@ class HospitalEnv:
             active_policies=policies,
             pending_patients=pending_queue,
         )
+        if crisis.type == CrisisType.OUTBREAK:
+            self._state.active_pathogens = ["unknown_pathogen"]
+            self._state.ward_lockdowns = {"ER": False, "ICU": False, "WARD": False, "ISOLATION": False}
 
         # Plan schema drifts for this episode
         self._schema_drift.plan_drifts(self.max_steps, difficulty)

@@ -22,6 +22,12 @@ from typing import Any, Optional
 import httpx
 
 from triage.agents.message_bus import MessageBus
+try:
+    from triage.agents.strategy_memory import StrategyMemory
+except Exception:  # pragma: no cover - optional ChromaDB dependency
+    class StrategyMemory:
+        def get_strategy_prompt(self, *args, **kwargs) -> str:
+            return ""
 from triage.env.state import (
     AgentAction,
     AgentMessage,
@@ -132,6 +138,11 @@ class BaseAgent(ABC):
 
         actions = []
         for tool in tool_calls:
+            if isinstance(tool, AgentAction):
+                self.actions_taken += 1
+                self._action_history.append(tool)
+                actions.append(tool)
+                continue
             tool_name = tool.__class__.__name__
             val_res = self.validator.validate(tool_name, tool.model_dump(), state)
             if isinstance(val_res, ValidatedAction):

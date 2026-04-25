@@ -260,6 +260,13 @@ class CrisisGenerator:
         for p in immediate:
             p.status = PatientStatus.INCOMING
 
+        if ctype == CrisisType.OUTBREAK:
+            for p in immediate[:3]:
+                p.condition = "unknown_pathogen infection"
+                p.status = PatientStatus.SERIOUS
+                p.triage_score = max(p.triage_score, 6)
+                p.ward = WardType.WARD_A
+
         drug_inv = dict(_DRUG_INVENTORY)
         if difficulty > 0.7:
             # Shortage scenario — cut some drugs

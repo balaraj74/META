@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 
 from triage.agents.message_bus import MessageBus
-from triage.agents.specialized import create_all_agents
+from triage.agents.specialized import InfectionControlAgent, create_all_agents
 from triage.env.hospital_env import HospitalEnv
 from triage.env.state import (
     ActionType,
@@ -23,6 +23,19 @@ from triage.env.state import (
 )
 from triage.rewards.reward_model import RewardModel
 from triage.safety.constitution import SafetyConstitution
+
+
+AGENT_STEP_ORDER = [
+    AgentType.CMO_OVERSIGHT,
+    AgentType.ER_TRIAGE,
+    AgentType.INFECTION_CONTROL,
+    AgentType.ICU_MANAGEMENT,
+    AgentType.PHARMACY,
+    AgentType.HR_ROSTERING,
+    AgentType.IT_SYSTEMS,
+    AgentType.BLOOD_BANK,
+    AgentType.ETHICS_COMMITTEE,
+]
 
 
 @dataclass
@@ -88,7 +101,7 @@ class AgentOrchestrator:
         all_actions: list[AgentAction] = []
 
         if action is None:
-            for agent_type in AgentType:
+            for agent_type in AGENT_STEP_ORDER:
                 agent = self.agents.get(agent_type)
                 if agent is None:
                     continue

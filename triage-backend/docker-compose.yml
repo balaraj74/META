@@ -43,6 +43,29 @@ services:
       - redis
       - db
 
+  triage-env-server:
+    build: .
+    command: uvicorn triage.api.env_server:app --host 0.0.0.0 --port 8001
+    environment:
+      - GRPO_TRAINING_MODE=true
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./:/app
+
+  triage-grpo-trainer:
+    build: .
+    command: python scripts/train_grpo.py
+    environment:
+      - GRPO_TRAINING_MODE=true
+      - TRIAGE_ENV_SERVER_URL=http://triage-env-server:8001
+      - HF_TOKEN=${HF_TOKEN}
+      - WANDB_API_KEY=${WANDB_API_KEY}
+    depends_on:
+      - triage-env-server
+    volumes:
+      - ./:/app
+
   db:
     image: postgres:16-alpine
     environment:

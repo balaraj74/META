@@ -389,34 +389,32 @@ State persists to `data/curriculum_state.json` across training runs.
 The training system is GRPO-first, with DPO retained as a secondary preference-alignment path:
 
 ```
-GRPO Crisis Prompts
-       │
-       ▼
-HospitalGRPOEnvironment ─── TRL environment_factory adapter
-       │
-       ▼
-AgentOrchestrator ─── ten agents produce structured tool actions
-       │
-       ▼
-SafetyConstitution ─── blocks unsafe actions, injects fallbacks
-       │
-       ▼
-HospitalEnv Episodes
-       │
-       ▼
-GRPO Verifiers ─── four independent binary checks + rule-based reward model
-       │
-       ▼
-CurriculumScheduler ─── advances / regresses 5-tier crisis difficulty
-       │
-       ▼
-GRPOTrainer ─── TRL + Unsloth + Qwen3-27B
-       │
-       ▼
-models/triage_grpo_output/ ─── LoRA adapter, optional merge to merged_grpo_final/
-
-DPO fallback path:
-EpisodeCollector → PreferenceLabeler → DatasetAdapter → TRIAGEDPOTrainer
+HospitalEnv (OpenEnv reset/step/state)
+│
+▼
+CurriculumScheduler ── selects difficulty tier per episode
+│
+▼
+HospitalGRPOEnvironment ── environment_factory for TRL
+│
+▼
+GRPOTrainer (TRL) + Unsloth Qwen3-27B
+├── num_generations=16
+├── max_seq_length=4096
+└── 4 independent binary verifiers:
+    ├── survival_verifier
+    ├── safety_verifier
+    ├── resource_verifier
+    └── ethics_verifier
+│
+▼
+TriageBenchmark ── eval on 5 held-out seeds every 100 steps
+│
+▼
+W&B Dashboard ── per-verifier reward curves + curriculum tier
+│
+▼
+LoRA Adapter → models/grpo_qwen3_27b/
 ```
 
 #### GRPO Configuration
@@ -431,18 +429,22 @@ EpisodeCollector → PreferenceLabeler → DatasetAdapter → TRIAGEDPOTrainer
 | `reward_funcs` | `triage.rewards.verifiers` | Independent verifier suite |
 | `curriculum_state` | `data/curriculum_state.json` | Persistent difficulty tier |
 
-#### DPO Configuration
+#### GRPO Configuration Table
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `model_name` | `Qwen/Qwen2.5-0.5B-Instruct` | Secondary preference-training baseline |
-| `beta` | `0.1` | DPO temperature (lower = closer to reference) |
-| `learning_rate` | `5e-5` | AdamW learning rate |
-| `epochs` | `1` | Laptop default (3 on Colab) |
-| `batch_size` | `1` | Laptop RTX 2050 (4 on Colab T4) |
-| `lora_r` | `16` | LoRA rank |
-| `max_length` | `512` | Max sequence length |
-| `fp16` | `True` | Half-precision training |
+| Parameter | Value | Description |
+|---|---|---|
+| `model_name` | `Qwen/Qwen3-27B` | 48GB HF Spaces, bf16 |
+| `load_in_4bit` | `False` | Full bf16 - no quantization at 48GB |
+| `lora_r` | `64` | LoRA rank |
+| `lora_alpha` | `128` | 2x lora_r |
+| `num_generations` | `16` | GRPO group size |
+| `max_seq_length` | `4096` | Full clinical context |
+| `per_device_batch` | `2` | Effective batch = 16 |
+| `gradient_accum` | `8` | |
+| `learning_rate` | `2e-5` | Cosine scheduler |
+| `num_epochs` | `3` | |
+| `gradient_checkpointing` | `False` | Not needed at 48GB |
+| `thinking_mode` | `True` | Qwen3 - CMO/Ethics agents |
 
 ---
 
@@ -491,11 +493,47 @@ EpisodeCollector → PreferenceLabeler → DatasetAdapter → TRIAGEDPOTrainer
 | `GET` | `/api/training/status` | Live training metrics (loss, progress, GPU) |
 | `GET` | `/api/training/memory` | Strategy memory contents |
 
+
+#### Safety
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/agents/safety/blocks` | All SafetyBlock records current episode |
+| `GET` | `/api/agents/safety/stats` | Constitution report - blocks by type/agent |
+
+#### Dispatch
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/agents/dispatch/status` | Ambulance fleet + diversion stats |
+
+#### Infection
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/agents/infection/status` | Ward case counts + lockdown status |
+
+#### Ethics
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/agents/ethics/decisions` | Full rationing decision log |
+
+#### Blood Bank
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/agents/bloodbank/inventory` | Blood type inventory + pending requests |
+
 #### WebSocket
 
 | Endpoint | Description |
 |----------|-------------|
 | `ws://localhost:8000/ws/live` | Real-time simulation state stream |
+
+
+| Event Type | Description |
+|---|---|
+| `safety_block` | SafetyConstitution blocked an action |
+| `rationing_decision` | Ethics committee made a rationing call |
+| `infection_spread` | New infection event between patients |
+| `ambulance_dispatch` | Ambulance dispatched to incident |
+| `patient_diverted` | Patient diverted to another hospital |
 
 **WebSocket Commands:**
 ```json
@@ -682,12 +720,19 @@ DATABASE_URL=sqlite+aiosqlite:///./triage.db
 # Redis (for Celery)
 REDIS_URL=redis://localhost:6379/0
 
-# Training
-TRAINING_OUTPUT_DIR=./models/triage_grpo_output
+# GRPO Training
 GRPO_TRAINING_MODE=false
+NUM_GENERATIONS=16
+GRPO_OUTPUT_DIR=./models/grpo_qwen3_27b
+
+# Safety
+CONSTITUTION_ACTIVE=true
+
+# Curriculum
 CURRICULUM_STATE_PATH=./data/curriculum_state.json
-DPO_EPOCHS=1
-DPO_BATCH_SIZE=1
+
+# Monitoring
+WANDB_PROJECT=triage-openenv-hackathon
 ```
 
 ### Agent Configuration (`config/agents.yaml`)
@@ -703,12 +748,12 @@ Each agent's system prompt, tools, priority, and role are defined here. This is 
 | `scripts/run_episode.py` | Run a single simulation episode |
 | `scripts/run_simulation.py` | Run multiple episodes back-to-back |
 | `scripts/collect_episodes.py` | Collect episodes → save as trajectories |
-| `scripts/build_grpo_dataset.py` | Generate 500 crisis scenario prompts for GRPO |
-| `scripts/train_grpo.py` | GRPO training with TRL + Unsloth + Qwen3-27B |
+| `scripts/build_grpo_dataset.py` | Generate 500 crisis scenario prompts |
+| `scripts/train_grpo.py` | GRPO training with Unsloth + Qwen3-27B |
 | `scripts/train_grpo_hf.py` | Self-contained GRPO training for HuggingFace compute |
 | `scripts/train_dpo.py` | Basic DPO training (CPU-safe) |
 | `scripts/train_dpo_gpu.py` | Full GPU DPO training with live metrics |
-| `scripts/demo_comparison.py` | Baseline vs GRPO-trained comparison |
+| `scripts/demo_before_after.py` | Baseline vs fine-tuned comparison |
 | `scripts/generate_dpo_fast.py` | Fast synthetic DPO dataset generation |
 | `scripts/generate_dpo_dataset_ollama.py` | Generate DPO data using Ollama (local LLM) |
 | `scripts/download_hf_dataset.py` | Pull medical DPO data from HuggingFace |
@@ -737,6 +782,31 @@ triage-backend/data/
 ├── episodes/                # Raw episode trajectories
 └── reports/                 # Generated training reports
 ```
+
+---
+
+
+## Model Merging
+
+Two independently trained LoRA adapters on the same Qwen3-27B base 
+can be merged using DARE-TIES merging via mergekit:
+
+```bash
+pip install mergekit
+
+# merge_config.yml
+merge_method: dare_ties
+base_model: Qwen/Qwen3-27B
+models:
+  - model: your_username/triage-lora
+    parameters: {density: 0.7, weight: 0.5}
+  - model: friend_username/triage-lora
+    parameters: {density: 0.7, weight: 0.5}
+out_path: ./merged_triage_model
+```
+
+Run `scripts/demo_before_after.py` against all three models 
+(model A, model B, merged) to show judges the improvement delta.
 
 ---
 

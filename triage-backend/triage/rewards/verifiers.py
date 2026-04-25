@@ -365,10 +365,10 @@ VERIFIER_SUITE = [
     reward_icu_efficiency,
     reward_violation_detection,
     reward_format_compliance,
-    reward_reasoning_quality,
-    reward_response_speed,
     reward_no_hallucination,
     reward_action_alignment,
+    reward_reasoning_quality,
+    reward_response_speed,
 ]
 
 # Human-readable names for logging

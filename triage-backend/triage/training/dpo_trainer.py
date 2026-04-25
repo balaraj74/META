@@ -140,6 +140,7 @@ class DPOTrainingPipeline:
             # Train
             logger.info("Starting DPO training...")
             train_result = trainer.train()
+            self._export_training_curves(trainer)
 
             # Save
             trainer.save_model(self.config.output_dir)
@@ -166,6 +167,76 @@ class DPOTrainingPipeline:
         except Exception as e:
             logger.exception("Training failed")
             return {"error": str(e)}
+
+    def _export_training_curves(self, trainer: Any) -> None:
+        """Export training loss and reward curves from trainer logs."""
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            logger.warning("matplotlib not installed — skipping plot export")
+            return
+
+        log_history = getattr(getattr(trainer, "state", None), "log_history", []) or []
+        loss_steps: list[float] = []
+        loss_values: list[float] = []
+        reward_episodes: list[float] = []
+        reward_values: list[float] = []
+
+        def _numeric(value: Any) -> float | None:
+            if isinstance(value, (int, float)):
+                return float(value)
+            return None
+
+        for index, entry in enumerate(log_history, start=1):
+            if not isinstance(entry, dict):
+                continue
+
+            step_value = _numeric(entry.get("step")) or float(index)
+            loss_value = _numeric(entry.get("loss"))
+            if loss_value is not None:
+                loss_steps.append(step_value)
+                loss_values.append(loss_value)
+
+            reward_value = None
+            if "total_reward" in entry:
+                reward_value = _numeric(entry.get("total_reward"))
+            if reward_value is None:
+                for key in entry:
+                    if "reward" in key.lower():
+                        reward_value = _numeric(entry.get(key))
+                        if reward_value is not None:
+                            break
+            if reward_value is not None:
+                episode_value = _numeric(entry.get("epoch")) or float(len(reward_episodes) + 1)
+                reward_episodes.append(episode_value)
+                reward_values.append(reward_value)
+
+        if not loss_values and not reward_values:
+            return
+
+        reports_dir = Path("data/reports")
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        output_path = reports_dir / "training_curves.png"
+
+        fig, (ax_loss, ax_reward) = plt.subplots(1, 2, figsize=(12, 5))
+
+        if loss_values:
+            ax_loss.plot(loss_steps, loss_values, marker="o", linewidth=1.5)
+        ax_loss.set_title("DPO Training Loss")
+        ax_loss.set_xlabel("step")
+        ax_loss.set_ylabel("loss")
+        ax_loss.grid(True, alpha=0.3)
+
+        if reward_values:
+            ax_reward.plot(reward_episodes, reward_values, marker="o", linewidth=1.5)
+        ax_reward.set_title("Reward Curve")
+        ax_reward.set_xlabel("episode")
+        ax_reward.set_ylabel("total_reward")
+        ax_reward.grid(True, alpha=0.3)
+
+        fig.tight_layout()
+        fig.savefig(output_path, dpi=150)
+        plt.close(fig)
 
     def _load_model(self) -> tuple[Any, Any]:
         """Load model with Unsloth or standard HF transformers."""

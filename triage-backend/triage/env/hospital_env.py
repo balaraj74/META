@@ -14,6 +14,7 @@ Episode lifecycle:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from typing import Any
@@ -23,6 +24,7 @@ import numpy as np
 from triage.env.crisis_generator import CrisisGenerator
 from triage.env.enterprise_registry import EnterpriseAppRegistry
 from triage.env.schema_drift import SchemaDrift
+from triage.rewards.sandbox import validate_action
 from triage.env.state import (
     ActionType,
     AgentAction,
@@ -255,6 +257,29 @@ class HospitalEnv:
 
         # Parse action
         agent_action = self._parse_action(action)
+
+        # Sandbox gate: reject malformed/unsafe actions before world mutation.
+        is_safe, reason = validate_action(json.dumps(action))
+        if not is_safe:
+            logger.warning("Blocked unsafe action in step(): %s", reason)
+            reward = -0.05
+            self._step_rewards.append(reward)
+            elapsed = time.perf_counter() - t0
+            self._step_times.append(elapsed)
+            terminated = self.is_terminal
+            action_result = {
+                "success": False,
+                "action": agent_action.to_dict(),
+                "error": f"sandbox_rejected:{reason}",
+                "side_effects": [],
+            }
+            info = {
+                "action_result": action_result,
+                "drift_events": [],
+                "step": self._state.step_count,
+                "reward_breakdown": self._reward_breakdown(agent_action),
+            }
+            return self._build_observation(), reward, terminated, info
 
         # Execute action on state
         action_result = self._execute_action(agent_action)

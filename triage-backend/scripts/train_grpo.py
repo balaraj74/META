@@ -93,17 +93,20 @@ def _build_reward_function():
     """
     Build a reward function compatible with TRL's GRPOTrainer.
 
-    GRPOTrainer calls: reward_func(completions: list[str], prompts: list[str]) -> list[float]
-
-    We extract the state from the prompt and run all 8 verifiers.
+    GRPOTrainer calls: reward_func(completions, prompts, **kwargs) -> list[float]
     """
     from triage.rewards.verifiers import compute_all_rewards
     from triage.rewards.sandbox import validate_action
 
-    def reward_fn(completions: list[str], **kwargs) -> list[float]:
+    def reward_fn(
+        completions: list[str],
+        prompts: list[str],
+        **kwargs,
+    ) -> list[float]:
         """Compute aggregate reward for each completion."""
         rewards = []
-        prompts = kwargs.get("prompts", kwargs.get("prompt", [""]))
+        state_dicts = kwargs.get("state_dicts", [])
+        has_state_dicts = bool(state_dicts)
 
         for i, completion in enumerate(completions):
             # 1. Sandbox check — reject unsafe completions immediately
@@ -112,9 +115,17 @@ def _build_reward_function():
                 rewards.append(0.0)
                 continue
 
-            # 2. Build a synthetic state from the prompt
-            prompt = prompts[i] if i < len(prompts) else ""
-            state = _extract_state_from_prompt(prompt)
+            # 2. Prefer real environment state; only parse prompt as fallback.
+            if has_state_dicts:
+                candidate_state = state_dicts[i] if i < len(state_dicts) else None
+                state = candidate_state if isinstance(candidate_state, dict) else {}
+            else:
+                prompt = prompts[i] if i < len(prompts) else ""
+                state = _extract_state_from_prompt(prompt)
+
+            if not state:
+                rewards.append(0.3)
+                continue
 
             # 3. Run all verifiers
             scores = compute_all_rewards(state, completion)
@@ -127,24 +138,14 @@ def _build_reward_function():
 
 def _extract_state_from_prompt(prompt: str) -> dict:
     """
-    Extract state variables from the structured prompt text.
-
-    The prompt format (from openenv_adapter.state_to_prompt) contains
-    embedded state values that we parse back into a dict for verifiers.
+    Best-effort fallback parser when state_dicts are unavailable.
     """
     import re
 
-    state = {
-        "alive_count": 20,
-        "deceased_count": 0,
-        "critical_count": 0,
-        "icu_occupancy": 0.5,
-        "violations_injected": 0,
-        "violations_caught": 0,
-        "survival_rate": 1.0,
-        "crisis_type": "mass_casualty",
-        "patients_summary": [],
-    }
+    if not prompt:
+        return {}
+
+    state: dict[str, object] = {}
 
     # Extract ICU occupancy
     match = re.search(r"ICU OCCUPANCY:\s*(\d+)%", prompt)
@@ -176,12 +177,15 @@ def _extract_state_from_prompt(prompt: str) -> dict:
     patient_ids = []
     for match in re.finditer(r"P-(\d{2,3})", prompt):
         patient_ids.append({"id": int(match.group(1)), "status": "CRITICAL"})
-    state["patients_summary"] = patient_ids
+    if patient_ids:
+        state["patients_summary"] = patient_ids
 
-    # Compute alive/deceased from survival rate
-    total = 20  # approximate
-    state["alive_count"] = int(state["survival_rate"] * total)
-    state["deceased_count"] = total - state["alive_count"]
+    # Infer alive/deceased only when survival_rate is present.
+    if "survival_rate" in state:
+        total = 20  # approximate
+        alive = int(float(state["survival_rate"]) * total)
+        state["alive_count"] = alive
+        state["deceased_count"] = total - alive
 
     return state
 

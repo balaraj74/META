@@ -35,6 +35,8 @@ CFG = {
 
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
 os.environ["WANDB_DISABLED"] = "true"
+USE_BF16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+COMPUTE_DTYPE = torch.bfloat16 if USE_BF16 else torch.float16
 
 # ═══════════════════════════════════════════════════════════════
 # Cell 3: Reward Verifiers (9 functions — proven Grade A)
@@ -226,8 +228,11 @@ HF_SOURCES = [
     ("Anthropic/hh-rlhf", None, ["chosen"]),
     ("allenai/prosocial-dialog", None, ["context","response"]),
     ("declare-lab/cicero", None, ["context","question","text","input"]),
-    # General Instruction & Reasoning
-    ("knowledgator/events-instruct", None, ["text","input","instruction"]),
+    ("wtsheng/synthetic_reasoning_natural", None, ["question","prompt"]),
+    ("open-thought/OpenThought-89K", None, ["question","prompt"]),
+    ("Replete-AI/rStar-Math", None, ["question","prompt"]),
+    ("ajibola16/reasoning-data", None, ["question","prompt"]),
+    ("Jiayi-Pan/Tiny-GSM8k", None, ["question","prompt"]),
 ]
 
 def augment_from_hf(max_per_source=150):
@@ -238,7 +243,7 @@ def augment_from_hf(max_per_source=150):
         try:
             kw = {"split":"train","streaming":True}
             if config: kw["name"] = config
-            ds = load_dataset(repo, **kw, trust_remote_code=True)
+            ds = load_dataset(repo, **kw)
             count = 0
             for row in ds:
                 if count >= max_per_source: break
@@ -281,10 +286,10 @@ def load_model():
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
     bnb = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
-                              bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True)
+                              bnb_4bit_compute_dtype=COMPUTE_DTYPE, bnb_4bit_use_double_quant=True)
     logger.info("Loading %s ...", CFG["model"])
     model = AutoModelForCausalLM.from_pretrained(CFG["model"], quantization_config=bnb,
-        device_map="auto", torch_dtype=torch.bfloat16, trust_remote_code=True, token=HF_TOKEN or None)
+        device_map="auto", torch_dtype=COMPUTE_DTYPE, trust_remote_code=True, token=HF_TOKEN or None)
     tokenizer = AutoTokenizer.from_pretrained(CFG["model"], trust_remote_code=True, token=HF_TOKEN or None)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -323,20 +328,34 @@ def build_dataset():
 def train():
     model, tokenizer = load_model()
     dataset = build_dataset()
+    import inspect
     from trl import GRPOTrainer, GRPOConfig
-    args = GRPOConfig(
+    grpo_kwargs = dict(
         output_dir=CFG["output_dir"], num_train_epochs=CFG["epochs"],
         per_device_train_batch_size=CFG["batch_size"],
         gradient_accumulation_steps=CFG["grad_accum"],
         learning_rate=CFG["lr"],
         max_completion_length=CFG["max_completion_length"],
-        max_prompt_length=CFG["max_seq_length"]-CFG["max_completion_length"],
         num_generations=CFG["num_generations"], temperature=CFG["temperature"],
         logging_steps=CFG["logging_steps"], save_steps=CFG["save_steps"],
-        save_total_limit=2, report_to="none", bf16=True, fp16=False, seed=42, log_level="info",
+        save_total_limit=2, report_to="none", bf16=USE_BF16, fp16=not USE_BF16, seed=42, log_level="info",
     )
-    trainer = GRPOTrainer(model=model, processing_class=tokenizer,
-                          reward_funcs=REWARD_FUNCS, args=args, train_dataset=dataset)
+    config_sig = inspect.signature(GRPOConfig)
+    if not any(p.kind == inspect.Parameter.VAR_KEYWORD for p in config_sig.parameters.values()):
+        supported = set(config_sig.parameters)
+        skipped = sorted(set(grpo_kwargs) - supported)
+        if skipped:
+            logger.info("Skipping unsupported GRPOConfig args for installed TRL: %s", skipped)
+        grpo_kwargs = {k: v for k, v in grpo_kwargs.items() if k in supported}
+    args = GRPOConfig(**grpo_kwargs)
+
+    trainer_kwargs = dict(model=model, reward_funcs=REWARD_FUNCS, args=args, train_dataset=dataset)
+    trainer_params = set(inspect.signature(GRPOTrainer.__init__).parameters)
+    if "processing_class" in trainer_params:
+        trainer_kwargs["processing_class"] = tokenizer
+    elif "tokenizer" in trainer_params:
+        trainer_kwargs["tokenizer"] = tokenizer
+    trainer = GRPOTrainer(**trainer_kwargs)
     logger.info("Starting GRPO training (%d prompts, %d epochs)...", len(dataset), CFG["epochs"])
     result = trainer.train()
     logger.info("Done! Loss=%.4f Steps=%d", result.training_loss, result.global_step)
@@ -351,9 +370,9 @@ def quick_eval():
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
     from peft import PeftModel
     bnb = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
-                              bnb_4bit_compute_dtype=torch.bfloat16)
+                              bnb_4bit_compute_dtype=COMPUTE_DTYPE)
     base = AutoModelForCausalLM.from_pretrained(CFG["model"], quantization_config=bnb,
-        device_map="auto", torch_dtype=torch.bfloat16, trust_remote_code=True, token=HF_TOKEN or None)
+        device_map="auto", torch_dtype=COMPUTE_DTYPE, trust_remote_code=True, token=HF_TOKEN or None)
     model = PeftModel.from_pretrained(base, CFG["output_dir"])
     tokenizer = AutoTokenizer.from_pretrained(CFG["output_dir"], trust_remote_code=True)
     test_prompt = (

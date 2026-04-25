@@ -1,0 +1,13 @@
+# Requirements for HuggingFace A100 training job
+# Last verified: 2026-04-25
+# NOTE: unsloth is installed separately in Dockerfile via pip install
+trl>=0.24.0
+datasets>=3.0.0
+transformers>=4.51.0
+torch>=2.4.0
+xformers
+bitsandbytes>=0.45.0
+peft>=0.14.0
+accelerate>=1.4.0
+wandb
+huggingface_hub

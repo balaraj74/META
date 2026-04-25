@@ -22,6 +22,7 @@ from triage.env.state import (
     MessageType,
 )
 from triage.rewards.reward_model import RewardModel
+from triage.safety.constitution import SafetyConstitution
 
 
 @dataclass
@@ -53,6 +54,7 @@ class AgentOrchestrator:
         self.env = env or HospitalEnv(seed=seed, max_steps=max_steps, difficulty=difficulty)
         self.bus = MessageBus(token_budget=token_budget)
         self.reward_model = RewardModel()
+        self.constitution = SafetyConstitution()
         self.mock_llm = mock_llm
         config_path = Path(agents_config_path or "./config/agents.yaml")
         with open(config_path, encoding="utf-8") as handle:
@@ -90,8 +92,11 @@ class AgentOrchestrator:
                 agent = self.agents.get(agent_type)
                 if agent is None:
                     continue
-                actions = await agent.act(state_before)
-                all_actions.extend(actions)
+                raw_actions = await agent.act(state_before)
+                safe_actions = self.constitution.validate(
+                    raw_actions, agent_type, state_before, state_before.step_count
+                )
+                all_actions.extend(safe_actions)
 
             if all_actions:
                 all_actions.sort(key=lambda item: item.priority, reverse=True)
@@ -105,6 +110,7 @@ class AgentOrchestrator:
                 action = self.env.action_space.sample()
 
         _, env_reward, terminated, info = await self.env.step(action)
+        await self.bus.tick()
         state_after = self.state
         breakdown = self.reward_model.compute(
             state_after,

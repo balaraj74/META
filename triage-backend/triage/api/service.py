@@ -158,9 +158,15 @@ class BackendService:
         payload = self._format_step_result(session, result)
         await self._broadcast("step_complete", payload)
         await self._broadcast("reward_update", {"episode_id": episode_id, "reward": result.breakdown})
+        
         if result.drift_events:
             for drift_event in result.drift_events:
                 await self._broadcast("drift_event", {"episode_id": episode_id, "event": drift_event})
+                
+        new_blocks = [b.to_dict() for b in session.orchestrator.state.safety_blocks if b.step == session.orchestrator.state.step_count]
+        for block in new_blocks:
+            await self._broadcast("safety_block", {"episode_id": episode_id, "block": block})
+
         if result.terminated:
             await self._broadcast("episode_end", self.episode_summary_payload(session))
         else:
@@ -335,6 +341,17 @@ class BackendService:
         if session is None:
             return []
         return session.orchestrator.get_agent_messages(agent_type)
+
+    def get_message_bus_stats(self) -> dict[str, Any]:
+        session = self.get_latest_episode()
+        if session is None:
+            return {}
+        # Assuming session.orchestrator has the 'bus' attribute natively.
+        if hasattr(session.orchestrator, "bus"):
+            return session.orchestrator.bus.stats()
+        elif hasattr(session.orchestrator, "message_bus"):
+            return session.orchestrator.message_bus.stats()
+        return {}
 
     async def override_agent(self, agent_type: AgentType, request: AgentOverrideRequest) -> dict[str, Any]:
         session = self.get_latest_episode()
@@ -645,10 +662,33 @@ class BackendService:
 
         return self._training_status.model_dump()
 
+    def get_safety_blocks(self) -> list[dict[str, Any]]:
+        session = self.get_latest_episode()
+        if not session:
+            return []
+        return [b.to_dict() for b in session.orchestrator.state.safety_blocks]
+
+    def get_safety_stats(self) -> dict[str, Any]:
+        session = self.get_latest_episode()
+        if not session:
+            return {}
+        return session.orchestrator.constitution.get_constitution_report()
 
     def get_strategy_memory(self) -> dict[str, Any]:
-        memory = StrategyMemory(storage_path=str(Path(self._last_output_dir) / "strategy_memory.json"))
-        return memory.get_all()
+        memory = StrategyMemory()
+        
+        result = {}
+        for agent_enum in AgentType:
+            agent_type = agent_enum.value
+            summary = memory.summarize(agent_type)
+            top_3 = memory.get_best_lessons(agent_type, limit=3)
+            result[agent_type] = {
+                "count": summary["count"],
+                "avg_reward_delta": summary["avg_reward_delta"],
+                "top_crisis_type": summary["top_crisis_type"],
+                "top_lessons": top_3
+            }
+        return result
 
     async def register_websocket(self, websocket: WebSocket) -> None:
         await websocket.accept()
@@ -720,6 +760,7 @@ class BackendService:
                     "is_active": agent_state.is_active if agent_state else True,
                     "inbox_size": stats["inbox_size"],
                     "messages_sent": stats["messages_sent"],
+                    "tool_usage": stats.get("tool_usage", {}),
                 }
             )
         return snapshots

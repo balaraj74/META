@@ -30,6 +30,8 @@ from triage.env.state import (
     EnvironmentState,
     MessageType,
 )
+from triage.agents.tools import AGENT_TOOLS
+from triage.agents.tool_validator import ToolValidationLayer, ValidatedAction, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -61,12 +63,17 @@ class BaseAgent(ABC):
         self.role: str = config.get("role", "agent")
         self.priority: int = config.get("priority", 5)
 
+        # Tools setup
+        self.tool_stats = {}
+        self.validator = ToolValidationLayer()
+
         # Tracking
         self.total_tokens: int = 0
         self.actions_taken: int = 0
         self.messages_sent: int = 0
         self._action_history: list[AgentAction] = []
         self._inbox: list[AgentMessage] = []
+        self.memory = StrategyMemory()
 
         # Register on message bus
         self.bus.subscribe(agent_type, self._on_message)
@@ -78,7 +85,7 @@ class BaseAgent(ABC):
         self,
         state: EnvironmentState,
         inbox: list[AgentMessage],
-    ) -> list[AgentAction]:
+    ) -> list[BaseModel]:
         """Decide what actions to take given current state and messages.
 
         Args:
@@ -86,7 +93,7 @@ class BaseAgent(ABC):
             inbox: Messages received since last decision.
 
         Returns:
-            List of actions to execute (may be empty).
+            List of ToolSchema objects to execute (may be empty).
         """
         ...
 
@@ -95,7 +102,7 @@ class BaseAgent(ABC):
         self,
         state: EnvironmentState,
         inbox: list[AgentMessage],
-    ) -> list[AgentAction]:
+    ) -> list[BaseModel]:
         """Fallback rule-based decision when LLM is unavailable."""
         ...
 
@@ -116,17 +123,40 @@ class BaseAgent(ABC):
         # Decide
         try:
             if self.mock_llm:
-                actions = self._rule_based_decision(state, inbox)
+                tool_calls = self._rule_based_decision(state, inbox)
             else:
-                actions = await self.decide(state, inbox)
+                tool_calls = await self.decide(state, inbox)
         except Exception:
             logger.exception("Agent %s decision failed, using fallback", self.agent_type.value)
-            actions = self._rule_based_decision(state, inbox)
+            tool_calls = self._rule_based_decision(state, inbox)
 
-        # Record
-        for action in actions:
-            self.actions_taken += 1
-            self._action_history.append(action)
+        actions = []
+        for tool in tool_calls:
+            tool_name = tool.__class__.__name__
+            val_res = self.validator.validate(tool_name, tool.model_dump(), state)
+            if isinstance(val_res, ValidatedAction):
+                action = AgentAction(
+                    agent_type=self.agent_type,
+                    action_type=val_res.action_type,
+                    target_id=val_res.target_id,
+                    priority=val_res.priority,
+                    reasoning=val_res.reasoning,
+                )
+                
+                # Special handling for SEND_MESSAGE action
+                if val_res.action_type == ActionType.SEND_MESSAGE:
+                    asyncio.ensure_future(self.send_message(
+                        to=tool.to_agent, content=tool.content,
+                        msg_type=MessageType.ACTION, priority=tool.urgency
+                    ))
+                elif val_res.action_type == ActionType.ESCALATE_TO_CMO:
+                    asyncio.ensure_future(self.escalate(
+                        content=tool.summary, patient_id=getattr(tool, "patient_id", None), priority=tool.urgency
+                    ))
+                else:
+                    self.actions_taken += 1
+                    self._action_history.append(action)
+                    actions.append(action)
 
         return actions
 
@@ -191,6 +221,7 @@ class BaseAgent(ABC):
             "messages_sent": self.messages_sent,
             "inbox_size": len(self._inbox),
             "mock_llm": self.mock_llm,
+            "tool_usage": self.tool_stats,
         }
 
     def reset(self) -> None:

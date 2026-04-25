@@ -167,6 +167,20 @@ class SimulationManager:
             type="state_update",
             data=self._build_state_snapshot(),
         ))
+        
+        def _serialize_decision(d):
+            res = dict(d.__dict__) if hasattr(d, "__dict__") else dict(d)
+            if "framework_used" in res and hasattr(res["framework_used"], "value"):
+                res["framework_used"] = res["framework_used"].value
+            return res
+            
+        for decision in state_after.rationing_decisions:
+            if decision.step == state.step_count:
+                await self._broadcast(WSMessage(
+                    type="rationing_decision",
+                    data=_serialize_decision(decision)
+                ))
+
 
         if terminated:
             self.status = SimulationStatus.COMPLETED
@@ -681,6 +695,23 @@ async def get_comparison_metrics():
         "error": None,
         "meta": None,
     })
+
+
+@app.get("/api/agents/ethics/decisions", response_model=ApiResponse)
+async def get_ethics_decisions() -> ApiResponse:
+    """Get all rationing decisions made by the Ethics Committee."""
+    if not sim_manager.env:
+        return ApiResponse(success=True, data={"decisions": []})
+        
+    def _serialize_decision(d):
+        res = dict(d.__dict__) if hasattr(d, "__dict__") else dict(d)
+        if "framework_used" in res and hasattr(res["framework_used"], "value"):
+            res["framework_used"] = res["framework_used"].value
+        return res
+        
+    state = sim_manager.env.state
+    decisions = [_serialize_decision(d) for d in state.rationing_decisions]
+    return ApiResponse(success=True, data={"decisions": decisions})
 
 
 # ── WebSocket ─────────────────────────────────────────────────────────────────

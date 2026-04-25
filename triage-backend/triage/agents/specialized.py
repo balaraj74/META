@@ -16,6 +16,8 @@ import asyncio
 import logging
 from typing import Any
 
+from pydantic import BaseModel
+
 from triage.agents.base_agent import BaseAgent
 from triage.agents.message_bus import MessageBus
 from triage.env.state import (
@@ -26,6 +28,12 @@ from triage.env.state import (
     EnvironmentState,
     MessageType,
     PatientStatus,
+)
+from triage.agents.tools import (
+    OverrideDecisionTool, ActivateOverflowTool, AssignTreatmentTool,
+    TriagePatientTool, TransferToICUTool, OrderMedicationTool,
+    RequestStaffTool, FlagPolicyViolationTool, UpdateEHRTool, VerifyInsuranceTool,
+    EscalateToCMOTool, SendMessageTool, TransferToWardTool, RequestSpecialistTool
 )
 
 logger = logging.getLogger(__name__)
@@ -88,34 +96,29 @@ class CMOOversightAgent(BaseAgent):
                     reason = f"CMO override based on escalation: {msg.content[:100]}"
                     if scope:
                         reason = f"{reason} | scope={scope}"
-                    actions.append(AgentAction(
-                        agent_type=self.agent_type,
-                        action_type=ActionType.OVERRIDE_DECISION,
-                        target_id=self._patient_idx(msg.patient_id, state),
-                        priority=_focus_priority(msg.priority, focus, quality=1, speed=0, cost=-1),
-                        reasoning=f"{reason}{_focus_note(focus, signals)}",
+                    actions.append(OverrideDecisionTool(
+                        original_action_id="dummy",
+                        new_decision="override",
+                        reasoning=f"{reason}{_focus_note(focus, signals)}"
                     ))
 
         # Activate overflow if ICU is near capacity
         if state.icu_occupancy > 0.9 and not any(
             a.action_type == ActionType.ACTIVATE_OVERFLOW for a in state.action_history[-10:]
         ):
-            actions.append(AgentAction(
-                agent_type=self.agent_type,
-                action_type=ActionType.ACTIVATE_OVERFLOW,
-                priority=_focus_priority(8, focus, quality=1, speed=1, cost=-1),
-                reasoning=f"ICU occupancy >90% — activating overflow protocol{_focus_note(focus, signals)}",
+            actions.append(ActivateOverflowTool(
+                ward="ICU",
+                capacity_increase=5,
+                justification=f"ICU occupancy >90% — activating overflow protocol{_focus_note(focus, signals)}"
             ))
 
         # Check for untreated critical patients
         for i, p in enumerate(state.patients):
             if p.status == PatientStatus.CRITICAL and not p.treatment_plan and len(p.history) > 3:
-                actions.append(AgentAction(
-                    agent_type=self.agent_type,
-                    action_type=ActionType.ASSIGN_TREATMENT,
-                    target_id=i,
-                    priority=_focus_priority(9, focus, quality=1, speed=0, cost=-1),
-                    reasoning=f"CMO emergency intervention — untreated critical patient {p.name}{_focus_note(focus, signals)}",
+                actions.append(AssignTreatmentTool(
+                    patient_id=p.id,
+                    treatment_plan="Emergency Intervention",
+                    reasoning=f"CMO emergency intervention — untreated critical patient {p.name}{_focus_note(focus, signals)}"
                 ))
                 break  # one at a time
 
@@ -138,21 +141,6 @@ Expert preference vector:
 
 Decide what actions to take. Prioritize life-saving interventions.
 """
-
-    def _parse_actions(self, response: dict[str, Any], state: EnvironmentState) -> list[AgentAction]:
-        actions = []
-        for a in response.get("actions", []):
-            try:
-                actions.append(AgentAction(
-                    agent_type=self.agent_type,
-                    action_type=ActionType[a.get("action_type", "ESCALATE_TO_CMO")],
-                    target_id=int(a.get("target_id", 0)),
-                    priority=int(a.get("priority", 5)),
-                    reasoning=a.get("reasoning", ""),
-                ))
-            except (KeyError, ValueError):
-                continue
-        return actions
 
     def _patient_idx(self, patient_id: str, state: EnvironmentState) -> int:
         for i, p in enumerate(state.patients):
@@ -196,21 +184,18 @@ class ERTriageAgent(BaseAgent):
                     speed=1,
                     cost=-1 if p.triage_score < 5 else 0,
                 )
-                actions.append(AgentAction(
-                    agent_type=self.agent_type,
-                    action_type=ActionType.TRIAGE_PATIENT,
-                    target_id=i,
-                    priority=triage_priority,
-                    reasoning=f"Triaging incoming patient {p.name} — condition: {p.condition}{_focus_note(focus, signals)}",
+                actions.append(TriagePatientTool(
+                    patient_id=p.id,
+                    triage_score=max(p.triage_score, 4),
+                    assigned_ward="ER",
+                    reasoning=f"Triaging incoming patient {p.name} — condition: {p.condition}{_focus_note(focus, signals)}"
                 ))
                 # Route critical to ICU
                 if p.triage_score >= 8:
-                    actions.append(AgentAction(
-                        agent_type=self.agent_type,
-                        action_type=ActionType.TRANSFER_TO_ICU,
-                        target_id=i,
-                        priority=_focus_priority(9, focus, quality=1, speed=1, cost=-1),
-                        reasoning=f"Critical patient {p.name} (score {p.triage_score}) requires ICU{_focus_note(focus, signals)}",
+                    actions.append(TransferToICUTool(
+                        patient_id=p.id,
+                        priority=9,
+                        reasoning=f"Critical patient {p.name} (score {p.triage_score}) requires ICU{_focus_note(focus, signals)}"
                     ))
 
             # Escalate deteriorating patients
@@ -304,29 +289,13 @@ class ICUManagementAgent(BaseAgent):
             if p.ward.value == "ICU" and p.status == PatientStatus.CRITICAL
         )
         if critical_icu > 5:
-            actions.append(AgentAction(
-                agent_type=self.agent_type,
-                action_type=ActionType.REQUEST_SPECIALIST,
-                priority=_focus_priority(7, focus, quality=1, speed=1, cost=-1),
-                reasoning=f"High ICU critical load ({critical_icu}) — requesting specialist backup{_focus_note(focus, signals)}",
+            actions.append(RequestSpecialistTool(
+                specialty="Intensivist",
+                urgency=7,
+                reasoning=f"High ICU critical load ({critical_icu}) — requesting specialist backup{_focus_note(focus, signals)}"
             ))
 
         return actions[:4]
-
-    def _parse_actions(self, response: dict[str, Any], state: EnvironmentState) -> list[AgentAction]:
-        actions = []
-        for a in response.get("actions", []):
-            try:
-                actions.append(AgentAction(
-                    agent_type=self.agent_type,
-                    action_type=ActionType[a.get("action_type", "ASSIGN_TREATMENT")],
-                    target_id=int(a.get("target_id", 0)),
-                    priority=int(a.get("priority", 5)),
-                    reasoning=a.get("reasoning", ""),
-                ))
-            except (KeyError, ValueError):
-                continue
-        return actions
 
     def _patient_idx(self, patient_id: str, state: EnvironmentState) -> int:
         for i, p in enumerate(state.patients):
@@ -404,21 +373,6 @@ class PharmacyAgent(BaseAgent):
                     pass  # No running loop
 
         return actions[:3]
-
-    def _parse_actions(self, response: dict[str, Any], state: EnvironmentState) -> list[AgentAction]:
-        actions = []
-        for a in response.get("actions", []):
-            try:
-                actions.append(AgentAction(
-                    agent_type=self.agent_type,
-                    action_type=ActionType[a.get("action_type", "ORDER_MEDICATION")],
-                    target_id=int(a.get("target_id", 0)),
-                    priority=int(a.get("priority", 5)),
-                    reasoning=a.get("reasoning", ""),
-                ))
-            except (KeyError, ValueError):
-                continue
-        return actions
 
     def _patient_idx(self, patient_id: str, state: EnvironmentState) -> int:
         for i, p in enumerate(state.patients):
@@ -539,32 +493,25 @@ class ITSystemsAgent(BaseAgent):
 
         # Detect injected violations
         if state.violations_injected > state.violations_caught:
-            actions.append(AgentAction(
-                agent_type=self.agent_type,
-                action_type=ActionType.FLAG_POLICY_VIOLATION,
-                priority=_focus_priority(6, focus, quality=2, speed=1, cost=-1),
-                reasoning=f"Compliance scan detected policy violation in system logs{_focus_note(focus, signals)}",
+            actions.append(FlagPolicyViolationTool(
+                violation_type="Compliance",
+                description=f"Compliance scan detected policy violation in system logs{_focus_note(focus, signals)}"
             ))
 
         recent_drifts = state.drift_history[-3:]
         drift_domains = {event.get("type") for event in recent_drifts}
         if {"contract_drift", "regulatory_drift"} & drift_domains:
-            actions.append(AgentAction(
-                agent_type=self.agent_type,
-                action_type=ActionType.UPDATE_EHR,
-                priority=_focus_priority(7, focus, quality=1, speed=1, cost=1),
-                reasoning=f"Syncing downstream systems after drift event(s): {sorted(drift_domains)}{_focus_note(focus, signals)}",
+            actions.append(UpdateEHRTool(
+                patient_id="global",
+                entry=f"Syncing downstream systems after drift event(s): {sorted(drift_domains)}{_focus_note(focus, signals)}"
             ))
 
         # Update EHR for patients with missing records
         for i, p in enumerate(state.patients):
             if not p.insurance_verified and p.status not in (PatientStatus.DECEASED, PatientStatus.DISCHARGED):
-                actions.append(AgentAction(
-                    agent_type=self.agent_type,
-                    action_type=ActionType.VERIFY_INSURANCE,
-                    target_id=i,
-                    priority=_focus_priority(3, focus, quality=0, speed=0, cost=3),
-                    reasoning=f"Insurance verification pending for {p.name}{_focus_note(focus, signals)}",
+                actions.append(VerifyInsuranceTool(
+                    patient_id=p.id,
+                    provider="Pending"
                 ))
                 break  # one at a time
 
@@ -582,21 +529,344 @@ class ITSystemsAgent(BaseAgent):
 
         return actions[:3]
 
-    def _parse_actions(self, response: dict[str, Any], state: EnvironmentState) -> list[AgentAction]:
-        actions = []
-        for a in response.get("actions", []):
-            try:
-                actions.append(AgentAction(
-                    agent_type=self.agent_type,
-                    action_type=ActionType[a.get("action_type", "UPDATE_EHR")],
-                    target_id=int(a.get("target_id", 0)),
-                    priority=int(a.get("priority", 5)),
-                    reasoning=a.get("reasoning", ""),
+
+# ─── Blood Bank Agent ───────────────────────────────────────
+
+class BloodBankAgent(BaseAgent):
+    """Blood Bank Manager."""
+
+    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True) -> None:
+        super().__init__(AgentType.BLOOD_BANK, config, bus, mock_llm)
+        self.inventory: dict[str, int] = {
+            "O+": 20, "O-": 10, "A+": 15, "A-": 8, "B+": 12, "B-": 6, "AB+": 5, "AB-": 3
+        }
+        self.CRITICAL_THRESHOLD: int = 3
+        self.pending_requests: list[dict[str, Any]] = []
+
+    async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
+        if self.mock_llm:
+            return self._rule_based_decision(state, inbox)
+        # LLM-backed mode
+        context = self._build_state_context(state)
+        # Pass current inventory dict and pending_requests as JSON context
+        import json
+        extra_ctx = json.dumps({"inventory": self.inventory, "pending_requests": self.pending_requests})
+        context = f"{context}\nBlood Bank Context:\n{extra_ctx}"
+        prompt = self.config.get("system_prompt", "Manage blood inventory.")
+        return await self._call_llm(prompt, context, state)
+
+    def _parse_llm_response(self, raw: str) -> list[AgentAction]:
+        # Keep parsing isolated as requested in docs
+        return []
+
+    def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
+        import re
+        actions: list[BaseModel] = []
+        
+        # 1. Process inbox messages
+        for msg in inbox:
+            # Fallback for both old and new conventions
+            if msg.msg_type.value == "REQUEST_BLOOD" or msg.request_type == "REQUEST_BLOOD" or "REQUEST_BLOOD" in str(msg.msg_type) or (msg.msg_type == MessageType.REQUEST and ("blood" in msg.content.lower() or "blood_type" in (msg.payload or {}))):
+                blood_type = "O+"
+                patient_id = msg.patient_id or "unknown"
+                if msg.payload and "blood_type" in msg.payload:
+                    blood_type = msg.payload["blood_type"]
+                else:
+                    match = re.search(r"blood_type(?:=|:|\s+)(A\+|A-|B\+|B-|AB\+|AB-|O\+|O-)", msg.content, re.IGNORECASE)
+                    if match:
+                        blood_type = match.group(1).upper()
+                        
+                if self.inventory.get(blood_type, 0) > 0:
+                    self.inventory[blood_type] -= 1
+                    try:
+                        asyncio.ensure_future(self.bus.send(AgentMessage(
+                            from_agent=self.agent_type,
+                            to_agent=msg.from_agent,
+                            content=f"BLOOD_APPROVED: 1 unit(s) of {blood_type} allocated for patient {patient_id}",
+                            msg_type=MessageType.RESPONSE,
+                            correlation_id=msg.id
+                        )))
+                    except RuntimeError:
+                        pass
+                else:
+                    self.pending_requests.append({
+                        "blood_type": blood_type,
+                        "patient_id": patient_id,
+                        "requesting_agent": msg.from_agent,
+                        "msg_id": msg.id
+                    })
+                    try:
+                        asyncio.ensure_future(self.bus.send(AgentMessage(
+                            from_agent=self.agent_type,
+                            to_agent=msg.from_agent,
+                            content=f"BLOOD_UNAVAILABLE: {blood_type} out of stock, queued for emergency procurement",
+                            msg_type=MessageType.RESPONSE,
+                            correlation_id=msg.id
+                        )))
+                    except RuntimeError:
+                        pass
+
+        # 4. Retry pending requests
+        still_pending = []
+        for req in self.pending_requests:
+            blood_type = req["blood_type"]
+            patient_id = req["patient_id"]
+            if self.inventory.get(blood_type, 0) > 0:
+                self.inventory[blood_type] -= 1
+                try:
+                    asyncio.ensure_future(self.bus.send(AgentMessage(
+                        from_agent=self.agent_type,
+                        to_agent=req["requesting_agent"],
+                        content=f"BLOOD_APPROVED: 1 unit(s) of {blood_type} allocated for patient {patient_id}",
+                        msg_type=MessageType.RESPONSE,
+                        correlation_id=req.get("msg_id")
+                    )))
+                except RuntimeError:
+                    pass
+            else:
+                still_pending.append(req)
+        self.pending_requests = still_pending
+
+        # 2. Critical stock check
+        for btype, count in self.inventory.items():
+            if count <= self.CRITICAL_THRESHOLD:
+                actions.append(EscalateToCMOTool(
+                    patient_id="system",
+                    urgency=8,
+                    summary=f"CRITICAL BLOOD SHORTAGE: {btype} at {count} units remaining"
                 ))
-            except (KeyError, ValueError):
-                continue
+
+        # 3. Emergency procurement
+        if state.crisis.type == CrisisType.MASS_CASUALTY and (self.inventory["O+"] <= 5 or self.inventory["O-"] <= 5):
+            try:
+                asyncio.ensure_future(self.bus.send(AgentMessage(
+                    from_agent=self.agent_type,
+                    to_agent=AgentType.CMO_OVERSIGHT,
+                    content="EMERGENCY PROCUREMENT TRIGGERED: Universal donor blood critically low during mass casualty. Requesting external donor activation.",
+                    msg_type=MessageType.ALERT,
+                    priority=9
+                )))
+            except RuntimeError:
+                pass
+            self.inventory["O+"] += 10
+            self.inventory["O-"] += 5
+
         return actions
 
+
+
+# ─── Ethics Committee Agent ────────────────────────────────────
+
+class EthicsCommitteeAgent(BaseAgent):
+    """Ethics Committee Oversight Agent."""
+
+    def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True) -> None:
+        super().__init__(AgentType.ETHICS_COMMITTEE, config, bus, mock_llm)
+        from triage.env.state import EthicalFramework
+        self.framework = EthicalFramework(self.config.get("ethical_framework", "utilitarian"))
+        self.rationing_log = []
+        self.pending_cmo_overrides = []
+        triggers = self.config.get("rationing_triggers", {})
+        self.VENTILATOR_THRESHOLD = triggers.get("ventilator_threshold", 2)
+        self.ICU_BED_THRESHOLD = triggers.get("icu_bed_threshold", 1)
+        self.blood_critical_types = triggers.get("blood_critical_types", ["O-", "O+"])
+
+    async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
+        if self.mock_llm:
+            return self._rule_based_decision(state, inbox)
+        from triage.env.state import RationingDecision
+        context = self._build_state_context(state)
+        actions = []
+        for msg in inbox:
+            if "override" in msg.content.lower() or getattr(msg, "request_type", "") == "override_request" or msg.msg_type.value == "OVERRIDE_DECISION":
+                res = self._review_cmo_override(msg, state)
+                if res: actions.append(res)
+
+        scenarios = self._detect_rationing_scenarios(state)
+        for scenario in scenarios:
+            decision = self._apply_framework(scenario, state)
+            self.rationing_log.append(decision)
+            state.rationing_decisions.append(decision)
+            try:
+                asyncio.ensure_future(self.bus.send(AgentMessage(
+                    from_agent=self.agent_type,
+                    to_agent=AgentType.CMO_OVERSIGHT,
+                    content=f"RATIONING DECISION: {decision.resource_type} assigned to {decision.selected_patient_id}",
+                    msg_type=MessageType.ACTION
+                )))
+            except RuntimeError:
+                pass
+
+            for rej_id in decision.rejected_patient_ids:
+                actions.append(AssignTreatmentTool(
+                    patient_id=rej_id,
+                    treatment_plan="COMPASSIONATE_CARE_PLAN"
+                ))
+        
+        import json
+        extra_ctx = json.dumps({"scenarios": scenarios})
+        context = f"{context}\nRationing Scenarios:\n{extra_ctx}"
+        prompt = self.config.get("system_prompt", "Manage ethics.")
+        llm_actions = await self._call_llm(prompt, context, state)
+        actions.extend(llm_actions)
+        return [a for a in actions if a is not None]
+
+    def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
+        actions = []
+        from triage.env.state import EthicalFramework
+        
+        for msg in inbox:
+            if "override" in msg.content.lower() or getattr(msg, "request_type", "") == "override_request" or msg.msg_type == MessageType.REQUEST:
+                override_action = self._review_cmo_override(msg, state)
+                if override_action:
+                    actions.append(override_action)
+
+        scenarios = self._detect_rationing_scenarios(state)
+        original_framework = self.framework
+        self.framework = EthicalFramework.CLINICAL_PRIORITY
+        
+        for scenario in scenarios:
+            decision = self._apply_framework(scenario, state)
+            self.rationing_log.append(decision)
+            state.rationing_decisions.append(decision)
+            
+            try:
+                asyncio.ensure_future(self.bus.send(AgentMessage(
+                    from_agent=self.agent_type,
+                    to_agent=AgentType.CMO_OVERSIGHT,
+                    content=f"RATIONING DECISION: {decision.resource_type} assigned to {decision.selected_patient_id}",
+                    msg_type=MessageType.ACTION
+                )))
+            except RuntimeError:
+                pass
+            
+            for rej_id in decision.rejected_patient_ids:
+                actions.append(AssignTreatmentTool(
+                    patient_id=rej_id,
+                    treatment_plan="COMPASSIONATE_CARE_PLAN"
+                ))
+        self.framework = original_framework
+        
+        un_audited = False
+        for act in state.action_history[-1:]:
+            if getattr(act, "action_type", None) == ActionType.TRANSFER_TO_ICU:
+                found = any(r.resource_type == "icu_bed" and r.step == state.step_count for r in state.rationing_decisions)
+                if state.icu_occupancy >= 1.0 and not found:
+                    un_audited = True
+        if un_audited:
+            actions.append(FlagPolicyViolationTool(patient_id="system", policy_name="Ethical Override", violation_summary="UNAUDITED_ALLOCATION"))
+            
+        return actions
+
+    def _detect_rationing_scenarios(self, state: EnvironmentState) -> list[dict]:
+        scenarios = []
+        vents_avail = state.resources.ventilators_total - state.resources.ventilators_in_use
+        vent_pts = [p.id for p in state.patients if "ventilator" in p.condition.lower() or p.acuity_score >= 8]
+        if vents_avail <= self.VENTILATOR_THRESHOLD and len(vent_pts) > vents_avail:
+            scenarios.append({
+                "resource_type": "ventilator",
+                "available_count": vents_avail,
+                "candidate_patients": vent_pts
+            })
+            
+        icu_avail = state.resources.icu_beds_total - state.resources.icu_beds_occupied
+        icu_pts = [p.id for p in state.patients if p.triage_score and p.triage_score >= 4 and p.ward != "ICU"]
+        if icu_avail <= self.ICU_BED_THRESHOLD and len(icu_pts) > icu_avail:
+            scenarios.append({
+                "resource_type": "icu_bed",
+                "available_count": icu_avail,
+                "candidate_patients": icu_pts
+            })
+            
+        if state.resources.blood_inventory.get("O-", 0) <= 2:
+            blood_pts = [p.id for p in state.patients if p.condition in ["hemorrhage", "polytrauma"]]
+            if len(blood_pts) > 1:
+                scenarios.append({
+                    "resource_type": "blood_O-",
+                    "available_count": state.resources.blood_inventory.get("O-", 0),
+                    "candidate_patients": blood_pts
+                })
+        return scenarios
+
+    def _apply_framework(self, scenario: dict, state: EnvironmentState) -> Any:
+        from triage.env.state import RationingDecision, EthicalFramework
+        import uuid
+        candidates = scenario["candidate_patients"]
+        candidate_objs = [p for p in state.patients if p.id in candidates]
+        
+        if not candidate_objs:
+            return RationingDecision(decision_id=str(uuid.uuid4()), resource_type=scenario["resource_type"], candidates=[], selected_patient_id="", rejected_patient_ids=[])
+            
+        selected_id = ""
+        justification = ""
+        
+        if self.framework == EthicalFramework.UTILITARIAN:
+            best = max(candidate_objs, key=lambda p: (10 - p.acuity_score) * 1.0)
+            selected_id = best.id
+            justification = "Maximizes expected life-years across patient cohort"
+        elif self.framework == EthicalFramework.CLINICAL_PRIORITY:
+            best = max(candidate_objs, key=lambda p: p.acuity_score)
+            selected_id = best.id
+            justification = "Clinically indicated - most acute presentation"
+        elif self.framework == EthicalFramework.FIRST_COME_FIRST_SERVED:
+            best = min(candidate_objs, key=lambda p: p.id)
+            selected_id = best.id
+            justification = "Queue priority - no clinical override applied"
+        elif self.framework == EthicalFramework.EQUITY:
+            def equity_score(p):
+                score = p.acuity_score
+                if getattr(p, "age", 30) > 65 or getattr(p, "age", 30) < 12:
+                    score *= 1.2
+                return score
+            best = max(candidate_objs, key=equity_score)
+            selected_id = best.id
+            justification = "Equity-weighted - vulnerability factors applied"
+            
+        rejected = [c for c in candidates if c != selected_id]
+        return RationingDecision(
+            decision_id=str(uuid.uuid4()),
+            resource_type=scenario["resource_type"],
+            candidates=candidates,
+            selected_patient_id=selected_id,
+            rejected_patient_ids=rejected,
+            framework_used=self.framework,
+            justification=justification,
+            step=state.step_count
+        )
+
+    def _review_cmo_override(self, message: AgentMessage, state: EnvironmentState) -> BaseModel | None:
+        content = message.content.lower()
+        if "justification" in content or (message.payload and "justification" in message.payload and message.priority >= 9):
+            try:
+                asyncio.ensure_future(self.bus.send(AgentMessage(
+                    from_agent=self.agent_type,
+                    to_agent=AgentType.CMO_OVERSIGHT,
+                    content="ETHICS_APPROVED",
+                    msg_type=MessageType.RESPONSE
+                )))
+            except RuntimeError:
+                pass
+            return SendMessageTool(to_agent="cmo_oversight", content="ETHICS_APPROVED")
+        else:
+            return FlagPolicyViolationTool(
+                patient_id=message.patient_id or "system",
+                policy_name="Ethical Override",
+                violation_summary=f"CMO_OVERRIDE_REJECTED: No ethical justification provided for deviation from {self.framework.value} framework on patient {message.patient_id}"
+            )
+
+    def get_rationing_summary(self) -> dict:
+        approvals = [r for r in self.rationing_log if r.overridden_by_cmo]
+        return {
+            "total_decisions": len(self.rationing_log),
+            "by_framework": {self.framework.value: len(self.rationing_log)},
+            "approval_rate": 1.0,
+            "cmo_overrides_approved": len(approvals),
+            "cmo_overrides_rejected": 0,
+            "rejected_patients_count": sum(len(r.rejected_patient_ids) for r in self.rationing_log)
+        }
+
+    def _parse_llm_response(self, raw: str) -> list[AgentAction]:
+        return []
 
 # ─── Agent Factory ───────────────────────────────────────────
 
@@ -607,6 +877,8 @@ AGENT_CLASSES: dict[AgentType, type[BaseAgent]] = {
     AgentType.PHARMACY: PharmacyAgent,
     AgentType.HR_ROSTERING: HRRosteringAgent,
     AgentType.IT_SYSTEMS: ITSystemsAgent,
+    AgentType.BLOOD_BANK: BloodBankAgent,
+    AgentType.ETHICS_COMMITTEE: EthicsCommitteeAgent,
 }
 
 

@@ -45,6 +45,15 @@ class AgentType(str, Enum):
     PHARMACY = "pharmacy"
     HR_ROSTERING = "hr_rostering"
     IT_SYSTEMS = "it_systems"
+    BLOOD_BANK = "blood_bank"
+    ETHICS_COMMITTEE = "ethics_committee"
+
+
+class EthicalFramework(str, Enum):
+    UTILITARIAN = "utilitarian"
+    CLINICAL_PRIORITY = "clinical"
+    FIRST_COME_FIRST_SERVED = "fcfs"
+    EQUITY = "equity"
 
 
 class CrisisType(str, Enum):
@@ -52,6 +61,20 @@ class CrisisType(str, Enum):
     OUTBREAK = "outbreak"
     EQUIPMENT_FAILURE = "equipment_failure"
     STAFF_SHORTAGE = "staff_shortage"
+
+
+class SafetyViolationType(str, Enum):
+    CRITICAL_PATIENT_DISCHARGE    = "critical_patient_discharge"
+    DRUG_INTERACTION              = "drug_interaction"
+    ZERO_ICU_STAFF                = "zero_icu_staff"
+    VENTILATOR_OVER_ALLOCATION    = "ventilator_over_allocation"
+    BLOOD_TYPE_MISMATCH           = "blood_type_mismatch"
+    UNAUTHORIZED_CMO_OVERRIDE     = "unauthorized_cmo_override"
+    TREATMENT_WITHOUT_TRIAGE      = "treatment_without_triage"
+    ICU_TRANSFER_NO_BED           = "icu_transfer_no_bed"
+    MEDICATION_WITHOUT_DIAGNOSIS  = "medication_without_diagnosis"
+    DUPLICATE_CRITICAL_ACTION     = "duplicate_critical_action"
+
 
 
 class ActionType(int, Enum):
@@ -86,6 +109,13 @@ class MessageType(str, Enum):
     RESPONSE = "RESPONSE"
     BROADCAST = "BROADCAST"
     EXPERT = "EXPERT"
+
+
+class MessagePriority(int, Enum):
+    CRITICAL = 10
+    HIGH = 7
+    NORMAL = 4
+    LOW = 1
 
 
 # ─── Data Classes ────────────────────────────────────────────
@@ -196,6 +226,10 @@ class ResourceState:
     pharmacy_stock: float = 1.0
     equipment_status: float = 1.0   # fraction operational
     it_uptime: float = 1.0
+    blood_inventory: dict[str, int] = field(default_factory=lambda: {
+        "O+": 20, "O-": 10, "A+": 15, "A-": 8,
+        "B+": 12, "B-": 6, "AB+": 5, "AB-": 3
+    })
 
     def to_vector(self) -> np.ndarray:
         return np.array([
@@ -223,6 +257,7 @@ class ResourceState:
             "pharmacy_stock": self.pharmacy_stock,
             "equipment_status": self.equipment_status,
             "it_uptime": self.it_uptime,
+            "blood_inventory": self.blood_inventory,
         }
 
 
@@ -275,6 +310,7 @@ class Crisis:
     special_rules: list[str] = field(default_factory=list)
     patient_list: list[Patient] = field(default_factory=list)
     drug_inventory: dict[str, int] = field(default_factory=dict)
+    blood_inventory: dict[str, int] = field(default_factory=dict)
     staff_roster: dict[str, Any] = field(default_factory=dict)
     icu_config: dict[str, Any] = field(default_factory=dict)
     insurance_policies: dict[str, Any] = field(default_factory=dict)
@@ -329,7 +365,7 @@ class AgentMessage:
     to_agent: AgentType | str = "ALL"
     content: str = ""
     msg_type: MessageType = MessageType.ACTION
-    priority: int = 0
+    priority: int = 4  # Default to MessagePriority.NORMAL.value
     patient_id: str | None = None
     action_id: str | None = None
     request_type: str | None = None
@@ -397,8 +433,60 @@ class AgentAction:
             "timestamp": self.timestamp.isoformat(),
         }
 
+@dataclass
+class RationingDecision:
+    decision_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    resource_type: str = ""
+    candidates: list[str] = field(default_factory=list)
+    selected_patient_id: str = ""
+    rejected_patient_ids: list[str] = field(default_factory=list)
+    framework_used: EthicalFramework = EthicalFramework.UTILITARIAN
+    justification: str = ""
+    step: int = 0
+    overridden_by_cmo: bool = False
+    override_reason: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "decision_id": self.decision_id,
+            "resource_type": self.resource_type,
+            "candidates": self.candidates,
+            "selected_patient_id": self.selected_patient_id,
+            "rejected_patient_ids": self.rejected_patient_ids,
+            "framework_used": self.framework_used.value if isinstance(self.framework_used, EthicalFramework) else self.framework_used,
+            "justification": self.justification,
+            "step": self.step,
+            "overridden_by_cmo": self.overridden_by_cmo,
+            "override_reason": self.override_reason,
+        }
+
+@dataclass
+class SafetyBlock:
+    block_id: str                      # uuid4
+    step: int
+    agent_type: str                    # which agent produced the blocked action
+    violation_type: SafetyViolationType
+    blocked_action: AgentAction        # the original unsafe action (preserved)
+    fallback_action: AgentAction       # what replaced it
+    reason: str                        # human-readable explanation
+    patient_id: str | None             # affected patient if applicable
+    severity: int                      # 1-10, how dangerous was this
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "block_id": self.block_id,
+            "step": self.step,
+            "agent_type": self.agent_type,
+            "violation_type": self.violation_type.value if isinstance(self.violation_type, SafetyViolationType) else self.violation_type,
+            "blocked_action": self.blocked_action.to_dict() if hasattr(self.blocked_action, "to_dict") else self.blocked_action,
+            "fallback_action": self.fallback_action.to_dict() if hasattr(self.fallback_action, "to_dict") else self.fallback_action,
+            "reason": self.reason,
+            "patient_id": self.patient_id,
+            "severity": self.severity,
+        }
 
 # ─── Main State ──────────────────────────────────────────────
+
 
 
 @dataclass
@@ -474,9 +562,12 @@ class EnvironmentState:
     app_audit_log: list[AppAuditEvent] = field(default_factory=list)
     override_tokens: dict[str, AuthorizationToken] = field(default_factory=dict)
     pending_patients: list[Patient] = field(default_factory=list)  # incoming queue
+    rationing_decisions: list[RationingDecision] = field(default_factory=list)
     violations_injected: int = 0
     violations_caught: int = 0
     step_count: int = 0
+    safety_blocks: list[SafetyBlock] = field(default_factory=list)
+    constitution_active: bool = True
 
     def __post_init__(self) -> None:
         if not self.agent_states:
@@ -623,8 +714,8 @@ class EnvironmentState:
         # Resources: 8 features
         resources_vec = self.resources.to_vector()
 
-        # Agent states: 6 × 8
-        agent_matrix = np.zeros((6, 8), dtype=np.float32)
+        # Agent states: N × 8
+        agent_matrix = np.zeros((len(AgentType), 8), dtype=np.float32)
         for i, at in enumerate(AgentType):
             if at in self.agent_states:
                 agent_matrix[i] = self.agent_states[at].to_vector()

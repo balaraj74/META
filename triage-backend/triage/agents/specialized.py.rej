@@ -1,0 +1,348 @@
+diff a/triage-backend/triage/agents/specialized.py b/triage-backend/triage/agents/specialized.py	(rejected hunks)
+@@ -57,27 +65,18 @@ def _focus_note(focus: str, signals: dict[str, float]) -> str:
+ # ─── CMO Oversight Agent ────────────────────────────────────
+ 
+ class CMOOversightAgent(BaseAgent):
+-    """Chief Medical Officer — supervisor agent.
+-
+-    Responsibilities:
+-    - Monitor all agent activities
+-    - Handle escalations from other agents
+-    - Override decisions when necessary
+-    - Activate emergency protocols
+-    - Ensure policy compliance across the board
+-    """
++    """Chief Medical Officer — supervisor agent."""
+ 
+     def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True) -> None:
+         super().__init__(AgentType.CMO_OVERSIGHT, config, bus, mock_llm)
+ 
+-    async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
++    async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
+         context = self._build_state_context(state)
+         prompt = self._build_cmo_prompt(state, inbox)
+-        response = await self._call_llm(prompt, context)
+-        return self._parse_actions(response, state)
++        return await self._call_llm(prompt, context, state)
+ 
+-    def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
+-        actions: list[AgentAction] = []
++    def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
++        actions: list[BaseModel] = []
+         focus, signals = _expert_focus(state)
+ 
+         # Handle escalations first
+@@ -164,26 +143,18 @@ Decide what actions to take. Prioritize life-saving interventions.
+ # ─── ER Triage Agent ────────────────────────────────────────
+ 
+ class ERTriageAgent(BaseAgent):
+-    """Emergency Room triage specialist.
+-
+-    Responsibilities:
+-    - Assess incoming patients
+-    - Assign triage scores (1-10)
+-    - Route patients to appropriate wards
+-    - Escalate critical cases to ICU or CMO
+-    """
++    """Emergency Room triage specialist."""
+ 
+     def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True) -> None:
+         super().__init__(AgentType.ER_TRIAGE, config, bus, mock_llm)
+ 
+-    async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
++    async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
+         context = self._build_state_context(state)
+         prompt = "Triage incoming patients. Assign scores and route to appropriate care."
+-        response = await self._call_llm(prompt, context)
+-        return self._parse_actions(response, state)
++        return await self._call_llm(prompt, context, state)
+ 
+-    def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
+-        actions: list[AgentAction] = []
++    def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
++        actions: list[BaseModel] = []
+         focus, signals = _expert_focus(state)
+ 
+         for i, p in enumerate(state.patients):
+@@ -226,76 +194,47 @@ class ERTriageAgent(BaseAgent):
+ 
+         return actions[:5]  # limit actions per step
+ 
+-    def _parse_actions(self, response: dict[str, Any], state: EnvironmentState) -> list[AgentAction]:
+-        actions = []
+-        for a in response.get("actions", []):
+-            try:
+-                actions.append(AgentAction(
+-                    agent_type=self.agent_type,
+-                    action_type=ActionType[a.get("action_type", "TRIAGE_PATIENT")],
+-                    target_id=int(a.get("target_id", 0)),
+-                    priority=int(a.get("priority", 5)),
+-                    reasoning=a.get("reasoning", ""),
+-                ))
+-            except (KeyError, ValueError):
+-                continue
+-        return actions
+-
+ 
+ # ─── ICU Management Agent ───────────────────────────────────
+ 
+ class ICUManagementAgent(BaseAgent):
+-    """ICU bed and ventilator management specialist.
+-
+-    Responsibilities:
+-    - Manage ICU bed allocation
+-    - Ventilator assignment and monitoring
+-    - Discharge planning for stable ICU patients
+-    - Overflow protocol management
+-    """
++    """ICU bed and ventilator management specialist."""
+ 
+     def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True) -> None:
+         super().__init__(AgentType.ICU_MANAGEMENT, config, bus, mock_llm)
+ 
+-    async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
++    async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
+         context = self._build_state_context(state)
+         prompt = "Manage ICU resources. Allocate beds, ventilators, and plan discharges."
+-        response = await self._call_llm(prompt, context)
+-        return self._parse_actions(response, state)
++        return await self._call_llm(prompt, context, state)
+ 
+-    def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
+-        actions: list[AgentAction] = []
++    def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
++        actions: list[BaseModel] = []
+         focus, signals = _expert_focus(state)
+ 
+         for msg in inbox:
+             if msg.request_type == "icu_bed_request" and msg.patient_id:
+-                actions.append(AgentAction(
+-                    agent_type=self.agent_type,
+-                    action_type=ActionType.TRANSFER_TO_ICU,
+-                    target_id=self._patient_idx(msg.patient_id, state),
+-                    priority=_focus_priority(max(msg.priority, 8), focus, quality=1, speed=1, cost=-1),
+-                    reasoning=f"ICU_MANAGER accepted delegated bed request: {msg.content[:100]}{_focus_note(focus, signals)}",
++                actions.append(TransferToICUTool(
++                    patient_id=msg.patient_id,
++                    priority=max(msg.priority, 8),
++                    reasoning=f"ICU_MANAGER accepted delegated bed request: {msg.content[:100]}{_focus_note(focus, signals)}"
+                 ))
+ 
+         # Assign treatment to critical patients in ICU
+         for i, p in enumerate(state.patients):
+             if p.ward.value == "ICU" and p.status == PatientStatus.CRITICAL and not p.treatment_plan:
+-                actions.append(AgentAction(
+-                    agent_type=self.agent_type,
+-                    action_type=ActionType.ASSIGN_TREATMENT,
+-                    target_id=i,
+-                    priority=_focus_priority(8, focus, quality=1, speed=0, cost=-1),
+-                    reasoning=f"Assigning ICU treatment plan for {p.name}{_focus_note(focus, signals)}",
++                actions.append(AssignTreatmentTool(
++                    patient_id=p.id,
++                    treatment_plan="ICU Protocol",
++                    reasoning=f"Assigning ICU treatment plan for {p.name}{_focus_note(focus, signals)}"
+                 ))
+ 
+             # Discharge stable ICU patients to free beds
+             elif p.ward.value == "ICU" and p.status == PatientStatus.STABLE:
+-                actions.append(AgentAction(
+-                    agent_type=self.agent_type,
+-                    action_type=ActionType.TRANSFER_TO_WARD,
+-                    target_id=i,
+-                    priority=_focus_priority(3, focus, quality=-1, speed=1, cost=2),
+-                    reasoning=f"Transferring stable patient {p.name} out of ICU{_focus_note(focus, signals)}",
++                actions.append(TransferToWardTool(
++                    patient_id=p.id,
++                    ward="General",
++                    reasoning=f"Transferring stable patient {p.name} out of ICU{_focus_note(focus, signals)}"
+                 ))
+ 
+         # Request specialist if many critical patients
+@@ -338,56 +261,41 @@ class ICUManagementAgent(BaseAgent):
+ # ─── Pharmacy Agent ─────────────────────────────────────────
+ 
+ class PharmacyAgent(BaseAgent):
+-    """Pharmacy operations and medication safety.
+-
+-    Responsibilities:
+-    - Process medication orders
+-    - Check drug interactions
+-    - Monitor inventory levels
+-    - Enforce double-verification for controlled substances
+-    """
++    """Pharmacy operations and medication safety."""
+ 
+     def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True) -> None:
+         super().__init__(AgentType.PHARMACY, config, bus, mock_llm)
+ 
+-    async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
++    async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
+         context = self._build_state_context(state)
+         prompt = "Manage pharmacy operations. Process orders, check interactions, monitor stock."
+-        response = await self._call_llm(prompt, context)
+-        return self._parse_actions(response, state)
++        return await self._call_llm(prompt, context, state)
+ 
+-    def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
+-        actions: list[AgentAction] = []
++    def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
++        actions: list[BaseModel] = []
+         focus, signals = _expert_focus(state)
+ 
+         for msg in inbox:
+             if msg.request_type == "medication_request" and msg.patient_id:
+-                actions.append(AgentAction(
+-                    agent_type=self.agent_type,
+-                    action_type=ActionType.ORDER_MEDICATION,
+-                    target_id=self._patient_idx(msg.patient_id, state),
+-                    priority=_focus_priority(max(msg.priority, 7), focus, quality=1, speed=0, cost=-1),
+-                    reasoning=f"PHARMACY accepted delegated medication request: {msg.content[:100]}{_focus_note(focus, signals)}",
++                actions.append(OrderMedicationTool(
++                    patient_id=msg.patient_id,
++                    drug_name="Requested Med",
++                    dose_mg=100.0,
++                    reasoning=f"PHARMACY accepted delegated medication request: {msg.content[:100]}{_focus_note(focus, signals)}"
+                 ))
+ 
+         # Order medications for patients with treatment plans but no meds
+         for i, p in enumerate(state.patients):
+             if p.treatment_plan and not p.medications and p.status != PatientStatus.DECEASED:
+-                base_priority = 6
+-                if focus == "cost" and p.status != PatientStatus.CRITICAL:
+-                    base_priority = 4
+-                if focus == "quality" and p.status == PatientStatus.CRITICAL:
+-                    base_priority = 8
+-                actions.append(AgentAction(
+-                    agent_type=self.agent_type,
+-                    action_type=ActionType.ORDER_MEDICATION,
+-                    target_id=i,
+-                    priority=_focus_priority(base_priority, focus, quality=1, speed=0, cost=-1),
++                actions.append(OrderMedicationTool(
++                    patient_id=p.id,
++                    drug_name="Standard Med",
++                    dose_mg=50.0,
+                     reasoning=(
+                         f"Filling medication order for {p.name} — treatment: "
+                         f"{p.treatment_plan[0] if p.treatment_plan else 'generic'}"
+                         f"{_focus_note(focus, signals)}"
+-                    ),
++                    )
+                 ))
+ 
+         # Check for low stock items and alert
+@@ -430,39 +323,29 @@ class PharmacyAgent(BaseAgent):
+ # ─── HR Rostering Agent ─────────────────────────────────────
+ 
+ class HRRosteringAgent(BaseAgent):
+-    """Human resources and staff scheduling.
+-
+-    Responsibilities:
+-    - Monitor staff fatigue levels
+-    - Manage shift rotations
+-    - Request additional staff during surges
+-    - Enforce work-hour limits
+-    """
++    """Human resources and staff scheduling."""
+ 
+     def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True) -> None:
+         super().__init__(AgentType.HR_ROSTERING, config, bus, mock_llm)
+ 
+-    async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
++    async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
+         context = self._build_state_context(state)
+         prompt = "Manage staff scheduling. Monitor fatigue, request reinforcements if needed."
+-        response = await self._call_llm(prompt, context)
+-        return self._parse_actions(response, state)
++        return await self._call_llm(prompt, context, state)
+ 
+-    def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
+-        actions: list[AgentAction] = []
++    def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
++        actions: list[BaseModel] = []
+         focus, signals = _expert_focus(state)
+ 
+         # Request staff if ratio is low
+         staffing_threshold = 0.75 if focus == "speed" else 0.6 if focus == "quality" else 0.5
+         if state.resources.staff_ratio < staffing_threshold:
+-            actions.append(AgentAction(
+-                agent_type=self.agent_type,
+-                action_type=ActionType.REQUEST_STAFF,
+-                priority=_focus_priority(7, focus, quality=0, speed=2, cost=-1),
+-                reasoning=(
+-                    f"Staff ratio critically low ({state.resources.staff_ratio:.0%}) "
+-                    f"— requesting emergency callback{_focus_note(focus, signals)}"
+-                ),
++            actions.append(RequestStaffTool(
++                role="Nurse",
++                count=5,
++                urgency=7,
++                reasoning=(f"Staff ratio critically low ({state.resources.staff_ratio:.0%}) "
++                           f"— requesting emergency callback{_focus_note(focus, signals)}")
+             ))
+             try:
+                 asyncio.ensure_future(self.escalate(
+@@ -474,56 +357,29 @@ class HRRosteringAgent(BaseAgent):
+ 
+         # Flag potential fatigue violations (simulated check every 5 steps)
+         if state.step_count % 5 == 0:
+-            # Simulate detecting a fatigued staff member
+-            actions.append(AgentAction(
+-                agent_type=self.agent_type,
+-                action_type=ActionType.FLAG_POLICY_VIOLATION,
+-                priority=_focus_priority(5, focus, quality=1, speed=0, cost=-1),
+-                reasoning=f"Periodic fatigue check — flagging potential POL-004 violation{_focus_note(focus, signals)}",
++            actions.append(FlagPolicyViolationTool(
++                violation_type="Fatigue",
++                description=f"Periodic fatigue check — flagging potential POL-004 violation{_focus_note(focus, signals)}"
+             ))
+ 
+         return actions[:2]
+ 
+-    def _parse_actions(self, response: dict[str, Any], state: EnvironmentState) -> list[AgentAction]:
+-        actions = []
+-        for a in response.get("actions", []):
+-            try:
+-                actions.append(AgentAction(
+-                    agent_type=self.agent_type,
+-                    action_type=ActionType[a.get("action_type", "REQUEST_STAFF")],
+-                    target_id=int(a.get("target_id", 0)),
+-                    priority=int(a.get("priority", 5)),
+-                    reasoning=a.get("reasoning", ""),
+-                ))
+-            except (KeyError, ValueError):
+-                continue
+-        return actions
+-
+ 
+ # ─── IT Systems Agent ───────────────────────────────────────
+ 
+ class ITSystemsAgent(BaseAgent):
+-    """IT infrastructure and compliance monitoring.
+-
+-    Responsibilities:
+-    - Monitor EHR system integrity
+-    - Detect policy violations from access logs
+-    - Manage IT uptime and backups
+-    - Enforce data privacy (HIPAA) compliance
+-    - Respond to schema drift / policy changes
+-    """
++    """IT infrastructure and compliance monitoring."""
+ 
+     def __init__(self, config: dict[str, Any], bus: MessageBus, mock_llm: bool = True) -> None:
+         super().__init__(AgentType.IT_SYSTEMS, config, bus, mock_llm)
+ 
+-    async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
++    async def decide(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
+         context = self._build_state_context(state)
+         prompt = "Monitor IT systems. Check for policy violations, EHR access anomalies, and system health."
+-        response = await self._call_llm(prompt, context)
+-        return self._parse_actions(response, state)
++        return await self._call_llm(prompt, context, state)
+ 
+-    def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[AgentAction]:
+-        actions: list[AgentAction] = []
++    def _rule_based_decision(self, state: EnvironmentState, inbox: list[AgentMessage]) -> list[BaseModel]:
++        actions: list[BaseModel] = []
+         focus, signals = _expert_focus(state)
+ 
+         # Monitor IT uptime

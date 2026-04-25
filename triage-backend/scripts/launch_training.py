@@ -114,22 +114,27 @@ def main():
 
     cmd_json = ", ".join(f'"{p}"' for p in cmd_parts)
 
-    dockerfile = f"""FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
+    dockerfile = f"""FROM python:3.11-slim
 
-# System deps
+# System deps for building
 RUN apt-get update && apt-get install -y --no-install-recommends \\
-    python3 python3-pip python3-dev git curl && \\
+    git curl build-essential && \\
     rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 WORKDIR /app
 
-# Install Python dependencies (standard PyPI packages)
-COPY requirements.txt .
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+# Install PyTorch first (CUDA 12.4)
+RUN pip install --no-cache-dir torch>=2.4.0 --index-url https://download.pytorch.org/whl/cu124
 
-# Install unsloth from git (needs separate step — PEP 508 git URL)
-RUN pip3 install --no-cache-dir --break-system-packages \\
-    "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
+# Install standard dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install unsloth from git
+RUN pip install --no-cache-dir "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
 
 # Copy training script
 COPY train_grpo_hf.py .

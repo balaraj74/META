@@ -254,6 +254,37 @@ merged.save_pretrained("models/merged_final/")
 
 The merged model at `models/merged_final/` is adapter-free and can be loaded with standard `transformers` — no PEFT dependency at inference time.
 
+### Qwen3-14B GRPO on AWS
+
+For the larger TRIAGE GRPO run on a single AWS `g5.2xlarge` A10G instance, use the
+Qwen3-14B entrypoint:
+
+```bash
+cd triage-backend
+pip install -r requirements.txt "unsloth>=2024.12" "trl>=0.12" peft transformers bitsandbytes accelerate datasets
+
+export HF_TOKEN=your_hf_token
+export DATASET=data/grpo_crisis_prompts
+export HUB_MODEL_ID=balarajr/triage-qwen3-14b-grpo
+
+screen -S triage-qwen3-grpo
+./scripts/run_qwen3_14b_grpo_aws.sh
+```
+
+The launcher resumes from the latest checkpoint in `models/grpo_qwen3_14b`, saves
+every 20 steps by default, merges through Unsloth's `merged_16bit` path, and pushes
+to `HUB_MODEL_ID`. To stop the EC2 instance automatically after training:
+
+```bash
+AUTO_SHUTDOWN=1 ./scripts/run_qwen3_14b_grpo_aws.sh
+```
+
+For a quick verifier-only sanity check before renting a GPU:
+
+```bash
+python scripts/train_grpo_qwen3_14b.py --smoke-rewards
+```
+
 ---
 
 ## 📊 Benchmark Results

@@ -406,7 +406,7 @@ class CMOOversightAgent(BaseAgent):
         context = self._build_state_context(state)
         prompt = self._build_cmo_prompt(state, inbox)
         response = await self._call_llm(prompt, context)
-        return self._parse_actions(response, state)
+        return self._parse_actions(response, state) or self._rule_based_decision(state, inbox)
 
     def _parse_actions(self, response: dict[str, Any], state: EnvironmentState) -> list[AgentAction]:
         actions = []
@@ -415,7 +415,7 @@ class CMOOversightAgent(BaseAgent):
                 actions.append(AgentAction(
                     agent_type=self.agent_type,
                     action_type=ActionType[a.get("action_type", "OVERRIDE_DECISION")],
-                    target_id=int(a.get("target_id", 0)),
+                    target_id=self._coerce_target_id(a.get("target_id", 0), state),
                     priority=int(a.get("priority", 5)),
                     reasoning=a.get("reasoning", ""),
                 ))
@@ -460,6 +460,16 @@ class CMOOversightAgent(BaseAgent):
                     reasoning=f"CMO emergency intervention — untreated critical patient {p.name}{_focus_note(focus, signals)}"
                 ))
                 break  # one at a time
+
+        interval = int(self.config.get("check_interval", self.config.get("oversight_check_interval", 5)))
+        if not actions and interval > 0 and state.step_count % interval == 0:
+            actions.append(AgentAction(
+                agent_type=self.agent_type,
+                action_type=ActionType.FLAG_POLICY_VIOLATION,
+                target_id=0,
+                priority=_focus_priority(3, focus, quality=1, speed=0, cost=0),
+                reasoning=f"Routine CMO oversight audit; no immediate override required{_focus_note(focus, signals)}",
+            ))
 
         return actions
 
@@ -557,7 +567,7 @@ class ERTriageAgent(BaseAgent):
                 actions.append(AgentAction(
                     agent_type=self.agent_type,
                     action_type=ActionType[a.get("action_type", "TRIAGE_PATIENT")],
-                    target_id=int(a.get("target_id", 0)),
+                    target_id=self._coerce_target_id(a.get("target_id", 0), state),
                     priority=int(a.get("priority", 5)),
                     reasoning=a.get("reasoning", ""),
                 ))
@@ -829,7 +839,7 @@ class ICUManagementAgent(BaseAgent):
         context = self._build_state_context(state)
         prompt = "Manage ICU resources. Allocate beds, ventilators, and plan discharges."
         response = await self._call_llm(prompt, context)
-        return self._parse_actions(response, state)
+        return self._parse_actions(response, state) or self._rule_based_decision(state, inbox)
 
     def _parse_actions(self, response: dict[str, Any], state: EnvironmentState) -> list[AgentAction]:
         actions = []
@@ -838,7 +848,7 @@ class ICUManagementAgent(BaseAgent):
                 actions.append(AgentAction(
                     agent_type=self.agent_type,
                     action_type=ActionType[a.get("action_type", "TRANSFER_TO_ICU")],
-                    target_id=int(a.get("target_id", 0)),
+                    target_id=self._coerce_target_id(a.get("target_id", 0), state),
                     priority=int(a.get("priority", 5)),
                     reasoning=a.get("reasoning", ""),
                 ))
@@ -893,6 +903,15 @@ class ICUManagementAgent(BaseAgent):
                 reasoning=f"High ICU critical load ({critical_icu}) — requesting specialist backup{_focus_note(focus, signals)}"
             ))
 
+        if not actions:
+            actions.append(AgentAction(
+                agent_type=self.agent_type,
+                action_type=ActionType.UPDATE_EHR,
+                target_id=0,
+                priority=_focus_priority(3, focus, quality=1, speed=0, cost=0),
+                reasoning=f"Proactive ICU allocation review at {state.icu_occupancy:.0%} occupancy{_focus_note(focus, signals)}",
+            ))
+
         return actions[:4]
 
     def _patient_idx(self, patient_id: str, state: EnvironmentState) -> int:
@@ -921,7 +940,7 @@ class PharmacyAgent(BaseAgent):
         context = self._build_state_context(state)
         prompt = "Manage pharmacy operations. Process orders, check interactions, monitor stock."
         response = await self._call_llm(prompt, context)
-        return self._parse_actions(response, state)
+        return self._parse_actions(response, state) or self._rule_based_decision(state, inbox)
 
     def _parse_actions(self, response: dict[str, Any], state: EnvironmentState) -> list[AgentAction]:
         actions = []
@@ -930,7 +949,7 @@ class PharmacyAgent(BaseAgent):
                 actions.append(AgentAction(
                     agent_type=self.agent_type,
                     action_type=ActionType[a.get("action_type", "ORDER_MEDICATION")],
-                    target_id=int(a.get("target_id", 0)),
+                    target_id=self._coerce_target_id(a.get("target_id", 0), state),
                     priority=int(a.get("priority", 5)),
                     reasoning=a.get("reasoning", ""),
                 ))
@@ -984,6 +1003,15 @@ class PharmacyAgent(BaseAgent):
                     ))
                 except RuntimeError:
                     pass  # No running loop
+
+        if not actions:
+            actions.append(AgentAction(
+                agent_type=self.agent_type,
+                action_type=ActionType.UPDATE_EHR,
+                target_id=0,
+                priority=_focus_priority(3, focus, quality=1, speed=0, cost=0),
+                reasoning=f"Routine pharmacy stock and medication safety audit{_focus_note(focus, signals)}",
+            ))
 
         return actions[:3]
 
@@ -1058,7 +1086,7 @@ class HRRosteringAgent(BaseAgent):
                 actions.append(AgentAction(
                     agent_type=self.agent_type,
                     action_type=ActionType[a.get("action_type", "REQUEST_STAFF")],
-                    target_id=int(a.get("target_id", 0)),
+                    target_id=self._coerce_target_id(a.get("target_id", 0), state),
                     priority=int(a.get("priority", 5)),
                     reasoning=a.get("reasoning", ""),
                 ))
@@ -1096,7 +1124,7 @@ class ITSystemsAgent(BaseAgent):
                 actions.append(AgentAction(
                     agent_type=self.agent_type,
                     action_type=ActionType[a.get("action_type", "FLAG_POLICY_VIOLATION")],
-                    target_id=int(a.get("target_id", 0)),
+                    target_id=self._coerce_target_id(a.get("target_id", 0), state),
                     priority=int(a.get("priority", 5)),
                     reasoning=a.get("reasoning", ""),
                 ))
@@ -1194,7 +1222,7 @@ class BloodBankAgent(BaseAgent):
                 actions.append(AgentAction(
                     agent_type=self.agent_type,
                     action_type=ActionType[a.get("action_type", "REQUEST_BLOOD")],
-                    target_id=int(a.get("target_id", 0)),
+                    target_id=self._coerce_target_id(a.get("target_id", 0), state),
                     priority=int(a.get("priority", 5)),
                     reasoning=a.get("reasoning", ""),
                 ))
@@ -1284,7 +1312,11 @@ class BloodBankAgent(BaseAgent):
                 ))
 
         # 3. Emergency procurement
-        if state.crisis.type == CrisisType.MASS_CASUALTY and (self.inventory["O+"] <= 5 or self.inventory["O-"] <= 5):
+        if (
+            not self.pending_requests
+            and state.crisis.type == CrisisType.MASS_CASUALTY
+            and (self.inventory["O+"] <= 5 or self.inventory["O-"] <= 5)
+        ):
             try:
                 asyncio.ensure_future(self.bus.send(AgentMessage(
                     from_agent=self.agent_type,
@@ -1365,7 +1397,7 @@ class EthicsCommitteeAgent(BaseAgent):
                 actions.append(AgentAction(
                     agent_type=self.agent_type,
                     action_type=ActionType[a.get("action_type", "FLAG_POLICY_VIOLATION")],
-                    target_id=int(a.get("target_id", 0)),
+                    target_id=self._coerce_target_id(a.get("target_id", 0), state),
                     priority=int(a.get("priority", 5)),
                     reasoning=a.get("reasoning", ""),
                 ))
@@ -1508,12 +1540,19 @@ class EthicsCommitteeAgent(BaseAgent):
                 )))
             except RuntimeError:
                 pass
-            return SendMessageTool(to_agent="cmo_oversight", content="ETHICS_APPROVED")
+            return SendMessageTool(to_agent="cmo_oversight", content="ETHICS_APPROVED", urgency=8)
         else:
+            summary = (
+                "CMO_OVERRIDE_REJECTED: No ethical justification provided for "
+                f"deviation from {self.framework.value} framework on patient {message.patient_id}"
+            )
             return FlagPolicyViolationTool(
                 patient_id=message.patient_id or "system",
                 policy_name="Ethical Override",
-                violation_summary=f"CMO_OVERRIDE_REJECTED: No ethical justification provided for deviation from {self.framework.value} framework on patient {message.patient_id}"
+                violation_summary=summary,
+                violation_type="Ethical Override",
+                description=summary,
+                affected_patient_id=message.patient_id,
             )
 
     def get_rationing_summary(self) -> dict:

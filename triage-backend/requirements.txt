@@ -9,6 +9,7 @@ aiosqlite>=0.20.0
 redis>=5.1.0
 celery[redis]>=5.4.0
 transformers>=4.46.0
+huggingface_hub>=0.26.0
 torch>=2.5.0
 datasets>=3.0.0
 trl>=0.12.0

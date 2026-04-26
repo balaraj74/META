@@ -1,0 +1,2394 @@
+{
+  "scenarios": [
+    {
+      "scenario": "Mass Casualty",
+      "mean_survival": 1.0,
+      "mean_reward": 15.0,
+      "mean_violation_detection": 3.0,
+      "episodes": [
+        {
+          "scenario": "Mass Casualty",
+          "episode": 0,
+          "steps_run": 4,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 9,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 15.0,
+          "duration_s": 0.011,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 8,
+              "correct_actions": 0,
+              "correct_ratio": 0.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.107,
+              "p95_latency_ms": 0.251
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.008,
+              "p95_latency_ms": 0.01
+            },
+            "er_triage": {
+              "actions_taken": 20,
+              "correct_actions": 20,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.232,
+              "p95_latency_ms": 0.508
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.049,
+              "p95_latency_ms": 0.138
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.013,
+              "p95_latency_ms": 0.016
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.007,
+              "p95_latency_ms": 0.013
+            },
+            "hr_rostering": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.004,
+              "p95_latency_ms": 0.007
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.069,
+              "p95_latency_ms": 0.095
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.071,
+              "p95_latency_ms": 0.086
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.026,
+              "p95_latency_ms": 0.032
+            }
+          }
+        },
+        {
+          "scenario": "Mass Casualty",
+          "episode": 1,
+          "steps_run": 4,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 9,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 15.0,
+          "duration_s": 0.012,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 8,
+              "correct_actions": 0,
+              "correct_ratio": 0.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.136,
+              "p95_latency_ms": 0.339
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.01,
+              "p95_latency_ms": 0.013
+            },
+            "er_triage": {
+              "actions_taken": 20,
+              "correct_actions": 20,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.191,
+              "p95_latency_ms": 0.264
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.026,
+              "p95_latency_ms": 0.072
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.012,
+              "p95_latency_ms": 0.016
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.004,
+              "p95_latency_ms": 0.005
+            },
+            "hr_rostering": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.002,
+              "p95_latency_ms": 0.002
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.04,
+              "p95_latency_ms": 0.052
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.074,
+              "p95_latency_ms": 0.104
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.023,
+              "p95_latency_ms": 0.024
+            }
+          }
+        },
+        {
+          "scenario": "Mass Casualty",
+          "episode": 2,
+          "steps_run": 4,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 9,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 15.0,
+          "duration_s": 0.012,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 8,
+              "correct_actions": 0,
+              "correct_ratio": 0.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.142,
+              "p95_latency_ms": 0.267
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.008,
+              "p95_latency_ms": 0.011
+            },
+            "er_triage": {
+              "actions_taken": 20,
+              "correct_actions": 20,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.154,
+              "p95_latency_ms": 0.183
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.037,
+              "p95_latency_ms": 0.099
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.015,
+              "p95_latency_ms": 0.021
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.006,
+              "p95_latency_ms": 0.008
+            },
+            "hr_rostering": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.004,
+              "p95_latency_ms": 0.005
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.079,
+              "p95_latency_ms": 0.142
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.058,
+              "p95_latency_ms": 0.078
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.017,
+              "p95_latency_ms": 0.021
+            }
+          }
+        },
+        {
+          "scenario": "Mass Casualty",
+          "episode": 3,
+          "steps_run": 4,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 9,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 15.0,
+          "duration_s": 0.011,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 8,
+              "correct_actions": 0,
+              "correct_ratio": 0.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.09,
+              "p95_latency_ms": 0.204
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.009,
+              "p95_latency_ms": 0.011
+            },
+            "er_triage": {
+              "actions_taken": 20,
+              "correct_actions": 20,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.194,
+              "p95_latency_ms": 0.382
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.017,
+              "p95_latency_ms": 0.044
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.014,
+              "p95_latency_ms": 0.021
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.005,
+              "p95_latency_ms": 0.006
+            },
+            "hr_rostering": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.003,
+              "p95_latency_ms": 0.003
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.063,
+              "p95_latency_ms": 0.088
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.04,
+              "p95_latency_ms": 0.045
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.015,
+              "p95_latency_ms": 0.015
+            }
+          }
+        },
+        {
+          "scenario": "Mass Casualty",
+          "episode": 4,
+          "steps_run": 4,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 9,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 15.0,
+          "duration_s": 0.011,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 8,
+              "correct_actions": 0,
+              "correct_ratio": 0.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.093,
+              "p95_latency_ms": 0.21
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.009,
+              "p95_latency_ms": 0.011
+            },
+            "er_triage": {
+              "actions_taken": 20,
+              "correct_actions": 20,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.147,
+              "p95_latency_ms": 0.189
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.027,
+              "p95_latency_ms": 0.073
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.013,
+              "p95_latency_ms": 0.016
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.005,
+              "p95_latency_ms": 0.006
+            },
+            "hr_rostering": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.003,
+              "p95_latency_ms": 0.005
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.051,
+              "p95_latency_ms": 0.067
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.069,
+              "p95_latency_ms": 0.074
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.019,
+              "p95_latency_ms": 0.02
+            }
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "Disease Outbreak",
+      "mean_survival": 1.0,
+      "mean_reward": 10.1666,
+      "mean_violation_detection": 1.0666666666666667,
+      "episodes": [
+        {
+          "scenario": "Disease Outbreak",
+          "episode": 0,
+          "steps_run": 3,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 4,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 10.833,
+          "duration_s": 0.009,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.036,
+              "p95_latency_ms": 0.054
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.008,
+              "p95_latency_ms": 0.013
+            },
+            "er_triage": {
+              "actions_taken": 10,
+              "correct_actions": 10,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.064,
+              "p95_latency_ms": 0.111
+            },
+            "infection_control": {
+              "actions_taken": 10,
+              "correct_actions": 0,
+              "correct_ratio": 0.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.215,
+              "p95_latency_ms": 0.307
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.012,
+              "p95_latency_ms": 0.013
+            },
+            "pharmacy": {
+              "actions_taken": 9,
+              "correct_actions": 9,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.043,
+              "p95_latency_ms": 0.053
+            },
+            "hr_rostering": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.009,
+              "p95_latency_ms": 0.011
+            },
+            "it_systems": {
+              "actions_taken": 2,
+              "correct_actions": 2,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.049,
+              "p95_latency_ms": 0.057
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.061,
+              "p95_latency_ms": 0.08
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.017,
+              "p95_latency_ms": 0.021
+            }
+          }
+        },
+        {
+          "scenario": "Disease Outbreak",
+          "episode": 1,
+          "steps_run": 3,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 3,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 10.0,
+          "duration_s": 0.009,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.021,
+              "p95_latency_ms": 0.03
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.006,
+              "p95_latency_ms": 0.007
+            },
+            "er_triage": {
+              "actions_taken": 10,
+              "correct_actions": 10,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.063,
+              "p95_latency_ms": 0.099
+            },
+            "infection_control": {
+              "actions_taken": 9,
+              "correct_actions": 0,
+              "correct_ratio": 0.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.221,
+              "p95_latency_ms": 0.345
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.011,
+              "p95_latency_ms": 0.013
+            },
+            "pharmacy": {
+              "actions_taken": 9,
+              "correct_actions": 9,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.048,
+              "p95_latency_ms": 0.061
+            },
+            "hr_rostering": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.005,
+              "p95_latency_ms": 0.006
+            },
+            "it_systems": {
+              "actions_taken": 3,
+              "correct_actions": 3,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.051,
+              "p95_latency_ms": 0.068
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.066,
+              "p95_latency_ms": 0.07
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.016,
+              "p95_latency_ms": 0.017
+            }
+          }
+        },
+        {
+          "scenario": "Disease Outbreak",
+          "episode": 2,
+          "steps_run": 3,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 3,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 10.0,
+          "duration_s": 0.01,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.023,
+              "p95_latency_ms": 0.033
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.006,
+              "p95_latency_ms": 0.007
+            },
+            "er_triage": {
+              "actions_taken": 10,
+              "correct_actions": 10,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.063,
+              "p95_latency_ms": 0.1
+            },
+            "infection_control": {
+              "actions_taken": 9,
+              "correct_actions": 0,
+              "correct_ratio": 0.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.244,
+              "p95_latency_ms": 0.329
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.016,
+              "p95_latency_ms": 0.019
+            },
+            "pharmacy": {
+              "actions_taken": 9,
+              "correct_actions": 9,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.053,
+              "p95_latency_ms": 0.062
+            },
+            "hr_rostering": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.01,
+              "p95_latency_ms": 0.016
+            },
+            "it_systems": {
+              "actions_taken": 3,
+              "correct_actions": 3,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.089,
+              "p95_latency_ms": 0.13
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.061,
+              "p95_latency_ms": 0.066
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.018,
+              "p95_latency_ms": 0.021
+            }
+          }
+        },
+        {
+          "scenario": "Disease Outbreak",
+          "episode": 3,
+          "steps_run": 3,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 3,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 10.0,
+          "duration_s": 0.011,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.024,
+              "p95_latency_ms": 0.035
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.007,
+              "p95_latency_ms": 0.009
+            },
+            "er_triage": {
+              "actions_taken": 10,
+              "correct_actions": 10,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.086,
+              "p95_latency_ms": 0.148
+            },
+            "infection_control": {
+              "actions_taken": 9,
+              "correct_actions": 0,
+              "correct_ratio": 0.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.26,
+              "p95_latency_ms": 0.422
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.012,
+              "p95_latency_ms": 0.015
+            },
+            "pharmacy": {
+              "actions_taken": 9,
+              "correct_actions": 9,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.046,
+              "p95_latency_ms": 0.053
+            },
+            "hr_rostering": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.009,
+              "p95_latency_ms": 0.013
+            },
+            "it_systems": {
+              "actions_taken": 3,
+              "correct_actions": 3,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.081,
+              "p95_latency_ms": 0.089
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.101,
+              "p95_latency_ms": 0.101
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.018,
+              "p95_latency_ms": 0.019
+            }
+          }
+        },
+        {
+          "scenario": "Disease Outbreak",
+          "episode": 4,
+          "steps_run": 3,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 3,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 10.0,
+          "duration_s": 0.01,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.023,
+              "p95_latency_ms": 0.034
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.006,
+              "p95_latency_ms": 0.007
+            },
+            "er_triage": {
+              "actions_taken": 10,
+              "correct_actions": 10,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.066,
+              "p95_latency_ms": 0.101
+            },
+            "infection_control": {
+              "actions_taken": 9,
+              "correct_actions": 0,
+              "correct_ratio": 0.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.222,
+              "p95_latency_ms": 0.353
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.015,
+              "p95_latency_ms": 0.017
+            },
+            "pharmacy": {
+              "actions_taken": 9,
+              "correct_actions": 9,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.05,
+              "p95_latency_ms": 0.065
+            },
+            "hr_rostering": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.008,
+              "p95_latency_ms": 0.008
+            },
+            "it_systems": {
+              "actions_taken": 3,
+              "correct_actions": 3,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.049,
+              "p95_latency_ms": 0.054
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.056,
+              "p95_latency_ms": 0.064
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.017,
+              "p95_latency_ms": 0.02
+            }
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "Equipment Failure",
+      "mean_survival": 1.0,
+      "mean_reward": 10.0,
+      "mean_violation_detection": 1.0,
+      "episodes": [
+        {
+          "scenario": "Equipment Failure",
+          "episode": 0,
+          "steps_run": 5,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 3,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 10.0,
+          "duration_s": 0.009,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.022,
+              "p95_latency_ms": 0.037
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.005,
+              "p95_latency_ms": 0.006
+            },
+            "er_triage": {
+              "actions_taken": 25,
+              "correct_actions": 25,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.094,
+              "p95_latency_ms": 0.117
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.023,
+              "p95_latency_ms": 0.079
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.01,
+              "p95_latency_ms": 0.011
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.005,
+              "p95_latency_ms": 0.006
+            },
+            "hr_rostering": {
+              "actions_taken": 2,
+              "correct_actions": 2,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.01,
+              "p95_latency_ms": 0.018
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.041,
+              "p95_latency_ms": 0.048
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.046,
+              "p95_latency_ms": 0.062
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.015,
+              "p95_latency_ms": 0.019
+            }
+          }
+        },
+        {
+          "scenario": "Equipment Failure",
+          "episode": 1,
+          "steps_run": 5,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 3,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 10.0,
+          "duration_s": 0.009,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.025,
+              "p95_latency_ms": 0.065
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.005,
+              "p95_latency_ms": 0.006
+            },
+            "er_triage": {
+              "actions_taken": 25,
+              "correct_actions": 25,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.083,
+              "p95_latency_ms": 0.094
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.02,
+              "p95_latency_ms": 0.07
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.009,
+              "p95_latency_ms": 0.01
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.004,
+              "p95_latency_ms": 0.004
+            },
+            "hr_rostering": {
+              "actions_taken": 2,
+              "correct_actions": 2,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.01,
+              "p95_latency_ms": 0.017
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.042,
+              "p95_latency_ms": 0.057
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.055,
+              "p95_latency_ms": 0.079
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.013,
+              "p95_latency_ms": 0.019
+            }
+          }
+        },
+        {
+          "scenario": "Equipment Failure",
+          "episode": 2,
+          "steps_run": 5,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 3,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 10.0,
+          "duration_s": 0.009,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.024,
+              "p95_latency_ms": 0.053
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.006,
+              "p95_latency_ms": 0.008
+            },
+            "er_triage": {
+              "actions_taken": 25,
+              "correct_actions": 25,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.139,
+              "p95_latency_ms": 0.293
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.017,
+              "p95_latency_ms": 0.056
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.009,
+              "p95_latency_ms": 0.011
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.005,
+              "p95_latency_ms": 0.009
+            },
+            "hr_rostering": {
+              "actions_taken": 2,
+              "correct_actions": 2,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.011,
+              "p95_latency_ms": 0.023
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.038,
+              "p95_latency_ms": 0.047
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.045,
+              "p95_latency_ms": 0.054
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.013,
+              "p95_latency_ms": 0.014
+            }
+          }
+        },
+        {
+          "scenario": "Equipment Failure",
+          "episode": 3,
+          "steps_run": 5,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 3,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 10.0,
+          "duration_s": 0.01,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.024,
+              "p95_latency_ms": 0.049
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.007,
+              "p95_latency_ms": 0.009
+            },
+            "er_triage": {
+              "actions_taken": 25,
+              "correct_actions": 25,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.109,
+              "p95_latency_ms": 0.146
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.017,
+              "p95_latency_ms": 0.057
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.01,
+              "p95_latency_ms": 0.013
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.005,
+              "p95_latency_ms": 0.007
+            },
+            "hr_rostering": {
+              "actions_taken": 2,
+              "correct_actions": 2,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.011,
+              "p95_latency_ms": 0.023
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.063,
+              "p95_latency_ms": 0.101
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.119,
+              "p95_latency_ms": 0.34
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.016,
+              "p95_latency_ms": 0.023
+            }
+          }
+        },
+        {
+          "scenario": "Equipment Failure",
+          "episode": 4,
+          "steps_run": 5,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 3,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 10.0,
+          "duration_s": 0.01,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.022,
+              "p95_latency_ms": 0.042
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.006,
+              "p95_latency_ms": 0.008
+            },
+            "er_triage": {
+              "actions_taken": 25,
+              "correct_actions": 25,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.099,
+              "p95_latency_ms": 0.121
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.027,
+              "p95_latency_ms": 0.091
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.016,
+              "p95_latency_ms": 0.025
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.005,
+              "p95_latency_ms": 0.006
+            },
+            "hr_rostering": {
+              "actions_taken": 2,
+              "correct_actions": 2,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.015,
+              "p95_latency_ms": 0.033
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.056,
+              "p95_latency_ms": 0.068
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.074,
+              "p95_latency_ms": 0.09
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.015,
+              "p95_latency_ms": 0.016
+            }
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "Staff Shortage",
+      "mean_survival": 1.0,
+      "mean_reward": 10.0,
+      "mean_violation_detection": 1.0,
+      "episodes": [
+        {
+          "scenario": "Staff Shortage",
+          "episode": 0,
+          "steps_run": 4,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 3,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 10.0,
+          "duration_s": 0.01,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.023,
+              "p95_latency_ms": 0.053
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.005,
+              "p95_latency_ms": 0.007
+            },
+            "er_triage": {
+              "actions_taken": 20,
+              "correct_actions": 20,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.095,
+              "p95_latency_ms": 0.12
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.032,
+              "p95_latency_ms": 0.115
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.011,
+              "p95_latency_ms": 0.012
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.005,
+              "p95_latency_ms": 0.007
+            },
+            "hr_rostering": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.038,
+              "p95_latency_ms": 0.051
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.06,
+              "p95_latency_ms": 0.079
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.043,
+              "p95_latency_ms": 0.045
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.014,
+              "p95_latency_ms": 0.018
+            }
+          }
+        },
+        {
+          "scenario": "Staff Shortage",
+          "episode": 1,
+          "steps_run": 4,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 3,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 10.0,
+          "duration_s": 0.009,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.027,
+              "p95_latency_ms": 0.052
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.007,
+              "p95_latency_ms": 0.013
+            },
+            "er_triage": {
+              "actions_taken": 20,
+              "correct_actions": 20,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.098,
+              "p95_latency_ms": 0.127
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.022,
+              "p95_latency_ms": 0.077
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.012,
+              "p95_latency_ms": 0.015
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.006,
+              "p95_latency_ms": 0.007
+            },
+            "hr_rostering": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.039,
+              "p95_latency_ms": 0.057
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.067,
+              "p95_latency_ms": 0.088
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.054,
+              "p95_latency_ms": 0.064
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.016,
+              "p95_latency_ms": 0.019
+            }
+          }
+        },
+        {
+          "scenario": "Staff Shortage",
+          "episode": 2,
+          "steps_run": 4,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 3,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 10.0,
+          "duration_s": 0.009,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.021,
+              "p95_latency_ms": 0.046
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.005,
+              "p95_latency_ms": 0.006
+            },
+            "er_triage": {
+              "actions_taken": 20,
+              "correct_actions": 20,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.113,
+              "p95_latency_ms": 0.157
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.022,
+              "p95_latency_ms": 0.078
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.011,
+              "p95_latency_ms": 0.013
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.005,
+              "p95_latency_ms": 0.006
+            },
+            "hr_rostering": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.038,
+              "p95_latency_ms": 0.047
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.076,
+              "p95_latency_ms": 0.105
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.048,
+              "p95_latency_ms": 0.064
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.014,
+              "p95_latency_ms": 0.015
+            }
+          }
+        },
+        {
+          "scenario": "Staff Shortage",
+          "episode": 3,
+          "steps_run": 4,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 3,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 10.0,
+          "duration_s": 0.013,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.028,
+              "p95_latency_ms": 0.072
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.007,
+              "p95_latency_ms": 0.012
+            },
+            "er_triage": {
+              "actions_taken": 20,
+              "correct_actions": 20,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.137,
+              "p95_latency_ms": 0.219
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.034,
+              "p95_latency_ms": 0.112
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.017,
+              "p95_latency_ms": 0.02
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.008,
+              "p95_latency_ms": 0.011
+            },
+            "hr_rostering": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.064,
+              "p95_latency_ms": 0.076
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.094,
+              "p95_latency_ms": 0.148
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.064,
+              "p95_latency_ms": 0.076
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.017,
+              "p95_latency_ms": 0.018
+            }
+          }
+        },
+        {
+          "scenario": "Staff Shortage",
+          "episode": 4,
+          "steps_run": 4,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 3,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 10.0,
+          "duration_s": 0.012,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.027,
+              "p95_latency_ms": 0.047
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.008,
+              "p95_latency_ms": 0.011
+            },
+            "er_triage": {
+              "actions_taken": 20,
+              "correct_actions": 20,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.172,
+              "p95_latency_ms": 0.327
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.049,
+              "p95_latency_ms": 0.178
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.016,
+              "p95_latency_ms": 0.024
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.007,
+              "p95_latency_ms": 0.011
+            },
+            "hr_rostering": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.05,
+              "p95_latency_ms": 0.082
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.078,
+              "p95_latency_ms": 0.104
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.102,
+              "p95_latency_ms": 0.14
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.016,
+              "p95_latency_ms": 0.021
+            }
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "Combined Surge",
+      "mean_survival": 1.0,
+      "mean_reward": 15.0,
+      "mean_violation_detection": 3.0,
+      "episodes": [
+        {
+          "scenario": "Combined Surge",
+          "episode": 0,
+          "steps_run": 4,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 9,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 15.0,
+          "duration_s": 0.011,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 8,
+              "correct_actions": 0,
+              "correct_ratio": 0.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.081,
+              "p95_latency_ms": 0.19
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.008,
+              "p95_latency_ms": 0.012
+            },
+            "er_triage": {
+              "actions_taken": 20,
+              "correct_actions": 20,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.19,
+              "p95_latency_ms": 0.286
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.031,
+              "p95_latency_ms": 0.088
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.011,
+              "p95_latency_ms": 0.012
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.019,
+              "p95_latency_ms": 0.026
+            },
+            "hr_rostering": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.002,
+              "p95_latency_ms": 0.003
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.056,
+              "p95_latency_ms": 0.058
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.032,
+              "p95_latency_ms": 0.035
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.016,
+              "p95_latency_ms": 0.017
+            }
+          }
+        },
+        {
+          "scenario": "Combined Surge",
+          "episode": 1,
+          "steps_run": 4,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 9,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 15.0,
+          "duration_s": 0.012,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 8,
+              "correct_actions": 0,
+              "correct_ratio": 0.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.1,
+              "p95_latency_ms": 0.221
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.009,
+              "p95_latency_ms": 0.016
+            },
+            "er_triage": {
+              "actions_taken": 20,
+              "correct_actions": 20,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.191,
+              "p95_latency_ms": 0.324
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.019,
+              "p95_latency_ms": 0.048
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.014,
+              "p95_latency_ms": 0.021
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.031,
+              "p95_latency_ms": 0.049
+            },
+            "hr_rostering": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.005,
+              "p95_latency_ms": 0.011
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.071,
+              "p95_latency_ms": 0.091
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.065,
+              "p95_latency_ms": 0.103
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.026,
+              "p95_latency_ms": 0.034
+            }
+          }
+        },
+        {
+          "scenario": "Combined Surge",
+          "episode": 2,
+          "steps_run": 4,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 9,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 15.0,
+          "duration_s": 0.013,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 8,
+              "correct_actions": 0,
+              "correct_ratio": 0.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.093,
+              "p95_latency_ms": 0.228
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.009,
+              "p95_latency_ms": 0.011
+            },
+            "er_triage": {
+              "actions_taken": 20,
+              "correct_actions": 20,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.211,
+              "p95_latency_ms": 0.267
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.075,
+              "p95_latency_ms": 0.213
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.016,
+              "p95_latency_ms": 0.019
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.03,
+              "p95_latency_ms": 0.039
+            },
+            "hr_rostering": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.004,
+              "p95_latency_ms": 0.006
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.075,
+              "p95_latency_ms": 0.083
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.06,
+              "p95_latency_ms": 0.085
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.019,
+              "p95_latency_ms": 0.023
+            }
+          }
+        },
+        {
+          "scenario": "Combined Surge",
+          "episode": 3,
+          "steps_run": 4,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 9,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 15.0,
+          "duration_s": 0.011,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 8,
+              "correct_actions": 0,
+              "correct_ratio": 0.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.094,
+              "p95_latency_ms": 0.221
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.01,
+              "p95_latency_ms": 0.015
+            },
+            "er_triage": {
+              "actions_taken": 20,
+              "correct_actions": 20,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.163,
+              "p95_latency_ms": 0.26
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.019,
+              "p95_latency_ms": 0.049
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.013,
+              "p95_latency_ms": 0.016
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.021,
+              "p95_latency_ms": 0.028
+            },
+            "hr_rostering": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.003,
+              "p95_latency_ms": 0.004
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.048,
+              "p95_latency_ms": 0.049
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.044,
+              "p95_latency_ms": 0.064
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.021,
+              "p95_latency_ms": 0.028
+            }
+          }
+        },
+        {
+          "scenario": "Combined Surge",
+          "episode": 4,
+          "steps_run": 4,
+          "survival_rate": 1.0,
+          "icu_utilisation": 0.0,
+          "violations_caught": 9,
+          "violations_injected": 3,
+          "deceased": 0,
+          "reward": 15.0,
+          "duration_s": 0.011,
+          "agents": {
+            "ambulance_dispatch": {
+              "actions_taken": 8,
+              "correct_actions": 0,
+              "correct_ratio": 0.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.092,
+              "p95_latency_ms": 0.205
+            },
+            "cmo_oversight": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.008,
+              "p95_latency_ms": 0.012
+            },
+            "er_triage": {
+              "actions_taken": 20,
+              "correct_actions": 20,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.163,
+              "p95_latency_ms": 0.214
+            },
+            "infection_control": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.022,
+              "p95_latency_ms": 0.061
+            },
+            "icu_management": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.012,
+              "p95_latency_ms": 0.013
+            },
+            "pharmacy": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.018,
+              "p95_latency_ms": 0.024
+            },
+            "hr_rostering": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.002,
+              "p95_latency_ms": 0.003
+            },
+            "it_systems": {
+              "actions_taken": 5,
+              "correct_actions": 5,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.045,
+              "p95_latency_ms": 0.048
+            },
+            "blood_bank": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.042,
+              "p95_latency_ms": 0.055
+            },
+            "ethics_committee": {
+              "actions_taken": 0,
+              "correct_actions": 0,
+              "correct_ratio": 1.0,
+              "messages_sent": 0,
+              "mean_latency_ms": 0.019,
+              "p95_latency_ms": 0.022
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -215,6 +215,10 @@ class MessageBus:
     def tokens_used(self) -> int:
         return self._tokens_used
 
+    @property
+    def message_count(self) -> int:
+        return self._message_count
+
     def get_messages_for(self, agent_type: AgentType, limit: int = 50, msg_type: MessageType | None = None) -> list[AgentMessage]:
         msgs = [
             m for m in self._history

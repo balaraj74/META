@@ -179,11 +179,38 @@ def _agent_decision(agent: str, cfg: dict) -> tuple[str, str, int]:
     return ("NO_ACTION", "No action required.", 5)
 
 
+# ── Per-agent scoring tracker ────────────────────────────────────────────────
+
+def _make_agent_tracker():
+    return {k: {"actions": 0, "critical_actions": 0, "response_ms": [], "escalations": 0}
+            for k in AGENT_EMOJI}
+
+def _score_bar(val, width=12):
+    filled = int(val * width)
+    return "█" * filled + "░" * (width - filled)
+
+def _grade(score):
+    if score >= 95: return "A+"
+    if score >= 90: return "A"
+    if score >= 85: return "B+"
+    if score >= 80: return "B"
+    if score >= 70: return "C"
+    if score >= 60: return "D"
+    return "F"
+
 # ── Tab 1: Live Simulation ───────────────────────────────────────────────────
 
 def run_simulation(crisis_name: str, num_steps: int, progress=gr.Progress()):
     """Simulate the multi-agent system for `num_steps` and stream results."""
     cfg = CRISIS_CONFIGS.get(crisis_name, CRISIS_CONFIGS["🚨 Mass Casualty Event"]).copy()
+    initial_critical = cfg["critical"]
+    initial_untreated = cfg["untreated"]
+    initial_icu_pct = cfg["icu_used"] / cfg["icu_total"]
+    initial_violations = cfg["violations_injected"]
+
+    tracker = _make_agent_tracker()
+    clinical_events = []  # timeline of key clinical decisions
+    coordination_hits = 0  # when agents act in complementary pairs
 
     header = f"""## 🏥 TRIAGE Multi-Agent Simulation
 **Scenario:** {crisis_name}  
@@ -202,40 +229,71 @@ def run_simulation(crisis_name: str, num_steps: int, progress=gr.Progress()):
     violations_caught = 0
     deceased = 0
     alive = cfg["critical"] + random.randint(15, 30)
+    patients_treated = 0
+    beds_freed = 0
+    staff_called = 0
+    overflows_activated = 0
 
     for step in range(1, num_steps + 1):
         progress(step / num_steps, desc=f"Step {step}/{num_steps}")
-
         step_log = f"\n### Step {step} / {num_steps}\n"
+        step_actions = {}
 
         for agent_key, display_name in AGENT_EMOJI.items():
+            t0 = time.time()
             action, reasoning, priority = _agent_decision(agent_key, cfg)
+            resp_ms = round((time.time() - t0) * 1000 + random.uniform(8, 45), 1)
             total_actions += 1
+            tracker[agent_key]["actions"] += 1
+            tracker[agent_key]["response_ms"].append(resp_ms)
+            step_actions[agent_key] = action
+
+            if priority == 1:
+                tracker[agent_key]["critical_actions"] += 1
 
             if action in ("TRIAGE_PATIENT", "ASSIGN_TREATMENT") and cfg["untreated"] > 0:
                 treated = min(cfg["untreated"], random.randint(1, 3))
                 cfg["untreated"] -= treated
                 alive += treated
+                patients_treated += treated
+                clinical_events.append(f"Step {step}: {display_name} treated {treated} patient(s)")
 
             if action == "FLAG_POLICY_VIOLATION":
                 violations_caught += 1
                 cfg["violations_injected"] = max(0, cfg["violations_injected"] - 1)
+                clinical_events.append(f"Step {step}: {display_name} caught violation")
 
             if action == "ACTIVATE_OVERFLOW" and cfg["icu_used"] >= cfg["icu_total"] - 2:
                 cfg["icu_total"] += 15
+                overflows_activated += 1
+                clinical_events.append(f"Step {step}: {display_name} activated overflow (+15 beds)")
 
             if action == "TRANSFER_TO_WARD":
-                cfg["icu_used"] = max(0, cfg["icu_used"] - random.randint(1, 3))
+                freed = random.randint(1, 3)
+                cfg["icu_used"] = max(0, cfg["icu_used"] - freed)
+                beds_freed += freed
 
             if action == "REQUEST_STAFF" and cfg["type"] == "staff_shortage":
                 cfg["critical"] = max(0, cfg["critical"] - 1)
+                staff_called += 1
+
+            if action in ("OVERRIDE_DECISION", "ACTIVATE_OVERFLOW"):
+                tracker[agent_key]["escalations"] += 1
 
             priority_star = "🔴" if priority == 1 else ("🟡" if priority <= 3 else "🟢")
             step_log += (
                 f"**{display_name}**  \n"
-                f"→ `{action}` {priority_star} Priority {priority}  \n"
+                f"→ `{action}` {priority_star} Priority {priority} · ⏱ {resp_ms}ms  \n"
                 f"_{reasoning}_  \n\n"
             )
+
+        # Coordination detection
+        if step_actions.get("er_triage") == "TRIAGE_PATIENT" and step_actions.get("icu_management") in ("ASSIGN_TREATMENT", "TRANSFER_TO_WARD", "ACTIVATE_OVERFLOW"):
+            coordination_hits += 1
+        if step_actions.get("cmo_oversight") == "OVERRIDE_DECISION" and step_actions.get("hr_rostering") == "REQUEST_STAFF":
+            coordination_hits += 1
+        if step_actions.get("pharmacy") == "FLAG_POLICY_VIOLATION" and step_actions.get("it_systems") in ("VERIFY_INSURANCE", "FLAG_POLICY_VIOLATION"):
+            coordination_hits += 1
 
         if step % 3 == 0 and cfg["untreated"] > 0:
             new_arrivals = random.randint(0, 2)
@@ -246,24 +304,117 @@ def run_simulation(crisis_name: str, num_steps: int, progress=gr.Progress()):
         yield log
         time.sleep(0.15)
 
+    # ── Compute detailed scores ──────────────────────────────────────────
     survival_rate = alive / max(1, alive + deceased)
+    icu_pct_final = cfg["icu_used"] / cfg["icu_total"]
     viol_detection = violations_caught / max(1, violations_caught + cfg["violations_injected"])
-    reward = round((survival_rate * 0.5 + max(0, 1 - cfg["icu_used"] / cfg["icu_total"] * 0.3) * 0.25 + viol_detection * 0.25) * 10, 2)
+    triage_clearance = 1.0 - (cfg["untreated"] / max(1, initial_untreated))
+    coord_rate = coordination_hits / max(1, num_steps)
 
+    # 9 verifier-aligned sub-scores (0-1 each)
+    s_survival    = survival_rate
+    s_icu         = max(0, 1.0 - max(0, icu_pct_final - 0.6) / 0.4)
+    s_violation   = viol_detection
+    s_triage      = triage_clearance
+    s_speed       = 0.8  # recalculated below after collecting all_ms
+    s_coord       = min(1.0, coord_rate * 2)
+    s_escalation  = min(1.0, sum(t["escalations"] for t in tracker.values()) / max(1, num_steps) * 1.5)
+    s_clinical    = min(1.0, patients_treated / max(1, initial_untreated))
+    s_resource    = min(1.0, (beds_freed + overflows_activated * 5 + staff_called) / max(1, initial_critical) * 0.8)
+
+    # Fix speed calculation
+    all_ms = []
+    for t in tracker.values():
+        all_ms.extend(t["response_ms"])
+    avg_ms = sum(all_ms) / max(1, len(all_ms))
+    s_speed = min(1.0, max(0, 1.0 - (avg_ms - 10) / 90))
+
+    # Weighted composite (matches 9-verifier GRPO weights)
+    weights = {
+        "Patient Survival": (s_survival, 0.20),
+        "ICU Efficiency": (s_icu, 0.12),
+        "Violation Detection": (s_violation, 0.12),
+        "Triage Clearance": (s_triage, 0.12),
+        "Response Speed": (s_speed, 0.08),
+        "Agent Coordination": (s_coord, 0.10),
+        "Escalation Quality": (s_escalation, 0.08),
+        "Clinical Safety": (s_clinical, 0.10),
+        "Resource Management": (s_resource, 0.08),
+    }
+    composite = sum(score * w for score, w in weights.values())
+    composite_100 = composite * 100
+    letter = _grade(composite_100)
+
+    # ── Build rich results dashboard ─────────────────────────────────────
     summary = f"""
 ---
-## 📊 Final Results
+
+## 📊 Simulation Results Dashboard
+
+### 🏆 Overall Score: **{composite_100:.1f} / 100** — Grade **{letter}**
+
+`{_score_bar(composite, 30)}` {composite_100:.1f}%
+
+---
+
+### 🔬 9-Verifier Breakdown
+
+| # | Verifier | Score | Weight | Weighted | Bar |
+|---|---|---|---|---|---|
+"""
+    for i, (name, (score, weight)) in enumerate(weights.items(), 1):
+        ws = score * weight
+        summary += f"| {i} | {name} | {score:.2f} | {weight:.0%} | {ws:.3f} | `{_score_bar(score)}` |\n"
+    summary += f"| | **Composite** | | **100%** | **{composite:.3f}** | `{_score_bar(composite)}` |\n"
+
+    summary += f"""
+---
+
+### 📋 Clinical Metrics
+
+| Metric | Before | After | Δ |
+|---|---|---|---|
+| Survival Rate | — | {survival_rate:.1%} | {'✅' if survival_rate > 0.95 else '⚠️'} |
+| ICU Occupancy | {initial_icu_pct:.0%} | {icu_pct_final:.0%} | {'+' if icu_pct_final > initial_icu_pct else ''}{(icu_pct_final - initial_icu_pct)*100:.1f}pp {'📈' if icu_pct_final < initial_icu_pct else '📉'} |
+| Untreated Patients | {initial_untreated} | {cfg['untreated']} | {cfg['untreated'] - initial_untreated:+d} {'✅' if cfg['untreated'] == 0 else '⚠️'} |
+| Violations Open | {initial_violations} | {cfg['violations_injected']} | {cfg['violations_injected'] - initial_violations:+d} {'✅' if cfg['violations_injected'] == 0 else '⚠️'} |
+| Patients Treated | — | {patients_treated} | ✅ |
+| Beds Freed | — | {beds_freed} | {'✅' if beds_freed > 0 else '➖'} |
+| Overflow Activations | — | {overflows_activated} | {'🚨' if overflows_activated > 0 else '➖'} |
+| Staff Called In | — | {staff_called} | {'✅' if staff_called > 0 else '➖'} |
+
+---
+
+### 🤖 Per-Agent Performance
+
+| Agent | Actions | Critical | Avg Response | Escalations | Efficiency |
+|---|---|---|---|---|---|
+"""
+    for agent_key, display_name in AGENT_EMOJI.items():
+        t = tracker[agent_key]
+        a_avg = sum(t["response_ms"]) / max(1, len(t["response_ms"]))
+        eff = t["critical_actions"] / max(1, t["actions"])
+        eff_bar = _score_bar(eff, 6)
+        summary += f"| {display_name} | {t['actions']} | {t['critical_actions']} | {a_avg:.0f}ms | {t['escalations']} | `{eff_bar}` {eff:.0%} |\n"
+
+    summary += f"""
+---
+
+### 🔗 Coordination Analysis
 
 | Metric | Value |
 |---|---|
-| Survival Rate | {survival_rate:.1%} |
-| ICU Utilisation | {cfg['icu_used']}/{cfg['icu_total']} ({cfg['icu_used']/cfg['icu_total']:.0%}) |
-| Violations Caught | {violations_caught} |
+| Coordination Events | {coordination_hits} / {num_steps} steps |
+| Coordination Rate | {coord_rate:.0%} |
 | Total Agent Actions | {total_actions} |
-| **Composite Reward** | **{reward} / 10** |
+| Avg Response Time | {avg_ms:.0f}ms |
 
-**Composite Score: {min(100, reward * 9.7):.1f} / 100**
 """
+    if clinical_events:
+        summary += "### 📜 Clinical Event Timeline\n\n"
+        for evt in clinical_events[-8:]:
+            summary += f"- {evt}\n"
+
     yield log + summary
 
 

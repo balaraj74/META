@@ -1,9 +1,9 @@
 ---
-base_model: Qwen/Qwen3.5-4B
+base_model: Qwen/Qwen2.5-7B
 library_name: peft
 model_name: triage_grpo_output
 tags:
-- base_model:adapter:Qwen/Qwen3.5-4B
+- base_model:adapter:Qwen/Qwen2.5-7B
 - grpo
 - lora
 - transformers
@@ -14,7 +14,7 @@ pipeline_tag: text-generation
 
 # Model Card for triage_grpo_output
 
-This model is a fine-tuned version of [Qwen/Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B).
+This model is a fine-tuned version of [Qwen/Qwen2.5-7B](https://huggingface.co/Qwen/Qwen2.5-7B).
 It has been trained using [TRL](https://github.com/huggingface/trl).
 
 ## Quick start

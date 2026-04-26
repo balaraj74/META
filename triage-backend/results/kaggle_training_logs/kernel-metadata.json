@@ -1,0 +1,24 @@
+{
+  "id": "balarajr/notebook583d8fffed",
+  "id_no": 116919053,
+  "title": "notebook583d8fffed",
+  "code_file": "notebook583d8fffed.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "keywords": [],
+  "dataset_sources": [
+    "nehaprabhavalkar/av-healthcare-analytics-ii",
+    "kaushil268/disease-prediction-using-machine-learning",
+    "jpmiller/layoutlm",
+    "maalona/hospital-triage-and-patient-history-data"
+  ],
+  "kernel_sources": [],
+  "competition_sources": [],
+  "model_sources": [],
+  "docker_image": "gcr.io/kaggle-private-byod/python@sha256:00377cd1b3d470a605bc5b0ceca79969e369644e9b36802242a1c70e627372f9",
+  "machine_shape": "NvidiaTeslaT4"
+}

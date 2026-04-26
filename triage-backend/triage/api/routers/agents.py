@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from triage.api.schemas import AgentOverrideRequest, ApiResponse
+from triage.agents.model_router import ModelRouter
 from triage.api.service import backend_service
 from triage.env.state import AgentType
 
@@ -20,6 +21,11 @@ async def get_message_bus_stats() -> ApiResponse:
 @router.get("/", response_model=ApiResponse)
 async def list_agents() -> ApiResponse:
     return ApiResponse(success=True, data={"agents": backend_service.get_agent_statuses()})
+
+
+@router.get("/model-router/status", response_model=ApiResponse)
+async def get_model_router_status() -> ApiResponse:
+    return ApiResponse(success=True, data=ModelRouter.get_instance().status())
 
 
 @router.get("/safety/blocks", response_model=ApiResponse)

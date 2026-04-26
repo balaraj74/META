@@ -2,8 +2,19 @@
 # TRIAGE — Agent & Crisis Configuration
 # ──────────────────────────────────────────────────────────────
 
+global:
+  clinical_model: "Intelligent-Internet/II-Medical-8B"
+  operations_model: "Qwen/Qwen3-4B-Instruct"
+  clinical_model_local: "./models/ii-medical-8b"
+  operations_model_local: "./models/qwen3-4b"
+  grpo_clinical_adapter: "./models/grpo_clinical_adapter"
+  grpo_operations_adapter: "./models/grpo_operations_adapter"
+
 agents:
   ambulance_dispatch:
+    model: operations
+    think: false
+    max_tokens: 400
     role: "Ambulance Dispatch Coordinator"
     priority: 9
     num_ambulances: 5
@@ -26,6 +37,12 @@ agents:
       - FLAG_POLICY_VIOLATION
 
   cmo_oversight:
+    model: clinical
+    think: true
+    max_tokens: 800
+    check_interval: 5
+    icu_threshold: 0.70
+    critical_threshold: 5
     name: "CMO Oversight Agent"
     type: "cmo_oversight"
     color: "#7C3AED"    # purple
@@ -59,6 +76,9 @@ agents:
     oversight_check_interval: 5
 
   er_triage:
+    model: clinical
+    think: false
+    max_tokens: 600
     name: "ER Triage Agent"
     type: "er_triage"
     color: "#DC2626"    # red
@@ -92,6 +112,9 @@ agents:
     max_tokens_per_step: 600
 
   infection_control:
+    model: clinical
+    think: false
+    max_tokens: 600
     role: "Infection Control Officer"
     priority: 8
     pathogens:
@@ -124,6 +147,12 @@ agents:
       - ACTIVATE_PROTOCOL
 
   icu_management:
+    model: clinical
+    think: false
+    max_tokens: 600
+    proactive_interval: 3
+    overflow_threshold: 0.95
+    transfer_threshold: 0.80
     name: "ICU Management Agent"
     type: "icu_management"
     color: "#2563EB"    # blue
@@ -151,6 +180,10 @@ agents:
     max_tokens_per_step: 600
 
   pharmacy:
+    model: clinical
+    think: false
+    max_tokens: 400
+    audit_interval: 5
     name: "Pharmacy Agent"
     type: "pharmacy"
     color: "#D97706"    # amber
@@ -175,6 +208,11 @@ agents:
     max_tokens_per_step: 400
 
   hr_rostering:
+    model: operations
+    think: false
+    max_tokens: 400
+    audit_interval: 5
+    safe_ratio_threshold: 0.7
     name: "HR Rostering Agent"
     type: "hr_rostering"
     color: "#0D9488"    # teal
@@ -199,6 +237,10 @@ agents:
     max_tokens_per_step: 400
 
   it_systems:
+    model: operations
+    think: false
+    max_tokens: 400
+    sync_interval: 3
     name: "IT Systems Agent"
     type: "it_systems"
     color: "#6B7280"    # gray
@@ -224,6 +266,9 @@ agents:
     max_tokens_per_step: 400
 
   blood_bank:
+    model: clinical
+    think: false
+    max_tokens: 400
     role: "Blood Bank Manager"
     priority: 7
     system_prompt: |
@@ -241,6 +286,9 @@ agents:
       - FLAG_POLICY_VIOLATION
 
   ethics_committee:
+    model: clinical
+    think: true
+    max_tokens: 800
     role: "Ethics Committee Oversight"
     priority: 9
     ethical_framework: "utilitarian"

@@ -64,7 +64,7 @@ This model serves as the backbone for a **6-agent hospital crisis simulation** t
 | LoRA rank | 16 → 32 |
 | LoRA alpha | 32 → 64 |
 | Quantization | 4-bit NF4 (bitsandbytes) |
-| Training hardware | NVIDIA RTX 2050 (4GB VRAM) |
+| Training hardware | Kaggle NVIDIA Tesla T4 (16 GB VRAM) |
 | Dataset | 15,000 DPO pairs (MedMCQA + MedQA + crisis simulations) |
 | Avg reward margin | 0.35+ (vs. 0.026 baseline) |
 | Epochs | 4 |

@@ -2,7 +2,7 @@
 ## Meta PyTorch OpenEnv Hackathon Submission
 
 **Generated:** 2026-04-24  
-**Model:** `merged_grpo_final` (Qwen3.5-4B + GRPO LoRA)  
+**Model:** `merged_grpo_final` (Qwen2.5-7B + GRPO LoRA)  
 **Score:** 🏆 **90.00 / 100 — Grade A**
 
 ---
@@ -21,15 +21,15 @@ failures, staff shortages, and combined surges.
 
 ---
 
-## 2. Training — GRPO on Qwen3.5-4B
+## 2. Training — GRPO on Qwen2.5-7B
 
 | Parameter | Value |
 |---|---|
-| Base Model | `Qwen/Qwen3.5-4B` |
+| Base Model | `Qwen/Qwen2.5-7B` |
 | Method | GRPO (Group Relative Policy Optimization) |
 | LoRA Rank / Alpha | 16 / 32 |
 | Target Modules | q_proj, k_proj, v_proj, o_proj, gate/up/down_proj |
-| Hardware | NVIDIA RTX 2050 — 4 GB VRAM |
+| Hardware | Kaggle NVIDIA Tesla T4 — 16 GB VRAM |
 | Quantization | NF4 4-bit (training + inference) |
 | Mixed Precision | bfloat16 |
 
@@ -125,6 +125,7 @@ MODEL_LOAD_IN_4BIT=true
 
 | Item | Path | Status |
 |---|---|---|
+| GRPO Training Notebook | `notebooks/TRIAGE_GRPO_Training.ipynb` | ✅ |
 | GRPO Training Script | `scripts/train_grpo.py` | ✅ |
 | LoRA Merge Script | `scripts/merge_grpo_lora.py` | ✅ |
 | Merged Model | `models/merged_grpo_final/` | ✅ |
@@ -132,6 +133,7 @@ MODEL_LOAD_IN_4BIT=true
 | Benchmark Results (raw) | `results/bench_grpo_merged.json` | ✅ |
 | Inference Test Log | `results/grpo_inference_test.log` | ✅ |
 | HuggingFace Blog Draft | `HUGGINGFACE_BLOG_DRAFT.md` | ✅ |
+| Training Graphs | `results/graphs/` (8 plots) | ✅ |
 | Env Config | `.env` | ✅ Updated |
 | This Report | `results/FINAL_REPORT.md` | ✅ |
 
@@ -139,10 +141,10 @@ MODEL_LOAD_IN_4BIT=true
 
 ## 8. Next Steps
 
-1. **Push to HuggingFace Hub** — `balarajr/triage-qwen3.5-4b-grpo` via `merge_and_push_hf.py`
-2. **Wire FastAPI agent loader** to `MODEL_NAME` env var for live LLM-backed responses
-3. **50-step benchmark** — rerun to validate CMO escalation at scale
-4. **Publish blog** — review `HUGGINGFACE_BLOG_DRAFT.md` then post to HuggingFace
+1. **Push to HuggingFace Hub** — `balarajr/triage-qwen2.5-7b-grpo`
+2. **Update HuggingFace Space** — refresh `triage-multi-agent-system` with latest model
+3. **Publish blog** — post `HUGGINGFACE_BLOG_DRAFT.md` to HuggingFace community
+4. **Record video demo** — <2 min walkthrough for judges
 
 ---
 

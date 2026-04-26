@@ -21,6 +21,7 @@ from triage.api.routers import (
 )
 from triage.api.schemas import ApiResponse, EpisodeConfig, HealthResponse, TrainingConfig
 from triage.api.service import backend_service
+from triage.agents.model_router import ModelRouter
 
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,8 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    actual_mode = ModelRouter.initialize_from_env()
+    logger.info("ModelRouter initialized in %s mode: %s", actual_mode, ModelRouter.get_instance().status())
     await backend_service.initialize()
     yield
     await backend_service.shutdown()

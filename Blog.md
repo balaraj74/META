@@ -1,6 +1,6 @@
-# TRIAGE: How We Built a Multi-Agent Hospital AI That Scores 90/100 — on a 4 GB GPU
+# TRIAGE: How We Built a Multi-Agent Hospital AI That Scores 90/100 — on a free T4 GPU
 
-*A deep-dive into training ten specialized hospital AI agents to coordinate crisis response using GRPO fine-tuning on Qwen3.5-4B, OpenEnv, a Clinical Safety Constitution, and a 5-tier Curriculum Scheduler — all on a consumer NVIDIA RTX 2050.*
+*A deep-dive into training ten specialized hospital AI agents to coordinate crisis response using GRPO fine-tuning on Qwen2.5-7B, OpenEnv, a Clinical Safety Constitution, and a 5-tier Curriculum Scheduler — all on a free Kaggle T4 GPU.*
 
 ---
 
@@ -14,9 +14,9 @@ Existing AI for clinical decision support treats these departments as independen
 
 **TRIAGE** is our answer to that gap.
 
-Ten specialized AI agents. A shared typed message bus with priority routing and deadlock detection. A Clinical Safety Constitution that hard-blocks unsafe decisions before they reach the environment. A 5-tier curriculum that auto-scales difficulty as agents improve. A GRPO fine-tuned Qwen3.5-4B model. All working together in a production-grade, OpenEnv-compatible crisis simulation.
+Ten specialized AI agents. A shared typed message bus with priority routing and deadlock detection. A Clinical Safety Constitution that hard-blocks unsafe decisions before they reach the environment. A 5-tier curriculum that auto-scales difficulty as agents improve. A GRPO fine-tuned Qwen2.5-7B model. All working together in a production-grade, OpenEnv-compatible crisis simulation.
 
-Benchmarked at **90.00/100 (Grade A)**. 100% patient survival across all 5 crisis types. Trained entirely on a 4 GB GPU.
+Benchmarked at **90.00/100 (Grade A)**. 100% patient survival across all 5 crisis types. Trained entirely on a free T4 GPU.
 
 ---
 
@@ -27,8 +27,8 @@ Benchmarked at **90.00/100 (Grade A)**. 100% patient survival across all 5 crisi
 | **Composite Benchmark Score** | **90.00 / 100 (Grade A)** |
 | **Survival Rate** | **100%** across all 5 crisis types |
 | **Violation Detection Rate** | **100%** |
-| **Model** | Qwen3.5-4B + GRPO fine-tuning (TRL + Unsloth) |
-| **Training Hardware** | NVIDIA RTX 2050 — 4 GB VRAM |
+| **Model** | Qwen2.5-7B + GRPO fine-tuning (TRL + Unsloth) |
+| **Training Hardware** | Kaggle NVIDIA Tesla T4 — 16 GB VRAM |
 | **Quantization** | NF4 4-bit (training + inference) |
 | **Inference Latency** | ~5.3s per structured response |
 | **Agents** | 10 specialized agents |
@@ -36,7 +36,7 @@ Benchmarked at **90.00/100 (Grade A)**. 100% patient survival across all 5 crisi
 | **Curriculum** | 5-tier auto-advancing difficulty scheduler |
 | **Crisis Scenarios** | 5 types (Mass Casualty, Outbreak, Equipment Failure, Staff Shortage, Combined Surge) |
 | **Live Demo** | [🤗 HuggingFace Space](https://huggingface.co/spaces/balarajr/triage-multi-agent-system) |
-| **Model Hub** | [🤗 balarajr/triage-qwen3.5-4b-grpo](https://huggingface.co/balarajr/triage-qwen3.5-4b-grpo) |
+| **Model Hub** | [🤗 balarajr/triage-qwen2.5-7b-grpo](https://huggingface.co/balarajr/triage-qwen2.5-7b-grpo) |
 
 ---
 
@@ -105,7 +105,7 @@ The core insight behind TRIAGE is that hospital operations already have a natura
 │           │                                    │                            │
 │           └─────────────────┬──────────────────┘                            │
 │                             ▼                                                │
-│          GRPO-trained Qwen3.5-4B  ──►  FastAPI + WebSocket  ──►  Gradio     │
+│          GRPO-trained Qwen2.5-7B  ──►  FastAPI + WebSocket  ──►  Gradio     │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -343,7 +343,7 @@ We made six deliberate choices to prevent that:
 
 **5. Dynamic expert preferences.** The reward model includes an expert signals vector that shifts weighting dynamically. In some episodes, speed is paramount. In others, cost control is emphasized. The agents optimize against a moving target.
 
-**6. Dual execution modes.** Every agent runs in LLM-backed mode (Qwen3.5-4B for richer reasoning) or rule-based fallback mode (deterministic logic with zero GPU). The live Gradio demo uses fallback — it never fails regardless of infrastructure.
+**6. Dual execution modes.** Every agent runs in LLM-backed mode (Qwen2.5-7B for richer reasoning) or rule-based fallback mode (deterministic logic with zero GPU). The live Gradio demo uses fallback — it never fails regardless of infrastructure.
 
 ---
 
@@ -370,8 +370,8 @@ Every public method becomes a tool automatically. The model learns to call `tria
 ### Hardware Reality
 
 ```
-GPU:        NVIDIA GeForce RTX 2050 (4 GB VRAM)
-Model:      Qwen3.5-4B
+GPU:        NVIDIA Tesla T4 (16 GB VRAM) [Kaggle Free Tier]
+Model:      Qwen2.5-7B
 Quant:      NF4 4-bit (bitsandbytes) — fits 4B model in 4 GB VRAM
 LoRA Rank:  8 (reduced from 16 to halve LoRA VRAM footprint on T4)
 Mixed:      bfloat16
@@ -382,7 +382,7 @@ Mixed:      bfloat16
 ### Training Configuration
 
 ```yaml
-model:              Qwen/Qwen3.5-4B
+model:              Qwen/Qwen2.5-7B
 method:             GRPO (Group Relative Policy Optimization)
 lora_r:             8
 lora_alpha:         16
@@ -400,11 +400,11 @@ reward_funcs:       [survival_verifier, safety_verifier, resource_verifier, ethi
 output_format:      SEVERITY / ACTION / REASONING (structured)
 ```
 
-**Qwen3.5 thinking mode bonus:** For CMO and Ethics Committee agents, we prepend `<think>` to the system prompt to trigger Qwen3.5's chain-of-thought mode. Those agents produce explicit multi-step reasoning before emitting their SEVERITY/ACTION/REASONING block. The thinking tokens are stripped before reward scoring — they improve output quality without inflating response length scores.
+**Qwen2.5 thinking mode bonus:** For CMO and Ethics Committee agents, we prepend `<think>` to the system prompt to trigger Qwen2.5's chain-of-thought mode. Those agents produce explicit multi-step reasoning before emitting their SEVERITY/ACTION/REASONING block. The thinking tokens are stripped before reward scoring — they improve output quality without inflating response length scores.
 
 ### The Merge
 
-After training, LoRA adapters were merged using PEFT's `merge_and_unload()`. Because Qwen3.5-4B is ~10 GB in bfloat16, we used a shard-saving strategy to stay within the 6 GB RAM constraint:
+After training, LoRA adapters were merged using PEFT's `merge_and_unload()`. Because Qwen2.5-7B is ~10 GB in bfloat16, we used a shard-saving strategy to stay within the 6 GB RAM constraint:
 
 ```python
 from peft import PeftModel
@@ -412,7 +412,7 @@ from transformers import AutoModelForCausalLM
 import torch
 
 base = AutoModelForCausalLM.from_pretrained(
-    "Qwen/Qwen3.5-4B",
+    "Qwen/Qwen2.5-7B",
     torch_dtype=torch.bfloat16,  # bfloat16 NOT float32 — saves 50% RAM
     device_map="cpu",
 )
@@ -430,12 +430,12 @@ The merged model is a clean, adapter-free safetensors bundle — no PEFT depende
 
 ### Model Merging — Two Trained Models, One Better Model
 
-With two HuggingFace Spaces training the same Qwen3.5-4B base independently — one on infection control and ambulance dispatch datasets, one on the full 10-agent scenario set — we applied DARE-TIES merging to combine both adapters before final submission:
+With two HuggingFace Spaces training the same Qwen2.5-7B base independently — one on infection control and ambulance dispatch datasets, one on the full 10-agent scenario set — we applied DARE-TIES merging to combine both adapters before final submission:
 
 ```python
 # merge_config.yml
 merge_method: dare_ties
-base_model: Qwen/Qwen3.5-4B
+base_model: Qwen/Qwen2.5-7B
 models:
   - model: balarajr/triage-lora-full-agents
     parameters: {density: 0.7, weight: 0.5}
@@ -662,8 +662,8 @@ https://huggingface.co/spaces/balarajr/triage-multi-agent-system
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-model = AutoModelForCausalLM.from_pretrained("balarajr/triage-qwen3.5-4b-grpo")
-tokenizer = AutoTokenizer.from_pretrained("balarajr/triage-qwen3.5-4b-grpo")
+model = AutoModelForCausalLM.from_pretrained("balarajr/triage-qwen2.5-7b-grpo")
+tokenizer = AutoTokenizer.from_pretrained("balarajr/triage-qwen2.5-7b-grpo")
 
 prompt = (
     "Patient: 58M, blunt chest trauma, SpO2 82%, BP 90/60, GCS 13. "

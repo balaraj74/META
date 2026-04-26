@@ -57,6 +57,9 @@ class FlagPolicyViolationTool(BaseModel):
     violation_type: str = Field(..., description="Type of policy violated")
     description: str = Field(..., description="Details of the violation")
     affected_patient_id: Optional[str] = Field(None, description="Affected patient ID")
+    patient_id: Optional[str] = Field(None, description="Legacy patient ID alias")
+    policy_name: Optional[str] = Field(None, description="Legacy policy name")
+    violation_summary: str = Field("", description="Legacy violation summary alias")
 
 class UpdateEHRTool(BaseModel):
     patient_id: str = Field(..., description="ID of the patient")

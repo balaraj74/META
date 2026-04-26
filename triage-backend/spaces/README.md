@@ -4,7 +4,8 @@ emoji: 🏥
 colorFrom: red
 colorTo: blue
 sdk: gradio
-sdk_version: 4.44.0
+sdk_version: 5.29.0
+python_version: 3.11
 app_file: app.py
 pinned: true
 license: mit
@@ -27,8 +28,8 @@ TRIAGE is a reinforcement learning environment where 6 specialized AI agents
 collaborate to manage hospital crises — mass casualty events, disease outbreaks,
 equipment failures, and staff shortages.
 
-The system uses **GRPO (Group Relative Policy Optimization)** with 8 independent
-reward verifiers to train a **Qwen3.5-0.8B** model that:
+The system uses **GRPO (Group Relative Policy Optimization)** with 9 independent
+reward verifiers to train a **Qwen2.5-7B** model that:
 
 - 🎯 Triages patients correctly under pressure
 - 🏥 Manages ICU capacity efficiently
@@ -39,16 +40,16 @@ reward verifiers to train a **Qwen3.5-0.8B** model that:
 
 1. **Live Simulation** — Watch agents respond to crisis scenarios in real-time
 2. **GRPO Comparison** — See reward improvements: baseline vs GRPO-trained
-3. **Reward Inspector** — Debug any completion against all 8 verifiers
+3. **Reward Inspector** — Debug any completion against all 9 verifiers
 
 ## Architecture
 
 ```
 HospitalEnv (Gymnasium) → TriageOpenEnv (OpenEnv adapter) → FastAPI /env/*
                 ↓
-    8 Reward Verifiers (GRPO reward_funcs)
+    9 Reward Verifiers (GRPO reward_funcs)
                 ↓
-    GRPOTrainer (TRL + Unsloth 4-bit)
+    GRPOTrainer (TRL + LoRA 4-bit) on Qwen2.5-7B
                 ↓
     Gradio Space (this demo)
 ```
@@ -82,8 +83,8 @@ cite specific patient data, and avoid hallucination. The metrics below reflect t
 
 ## Hardware
 
-- **Training:** RTX 2050 (4GB VRAM) · LoRA rank=16 · 4-bit quantization
-- **Inference:** Ollama with Qwen3.5-0.8B
+- **Training:** Kaggle T4 (16 GB VRAM) · LoRA rank=16 · 4-bit quantization
+- **Inference:** merged_grpo_final (Qwen2.5-7B, NF4 4-bit)
 
 ## Links
 

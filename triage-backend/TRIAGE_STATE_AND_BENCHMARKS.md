@@ -7,16 +7,15 @@ This document summarizes the upgraded state of the TRIAGE Multi-Agent system, de
 
 ## 1. Upgraded Model Architecture
 
-The system has been officially upgraded to run **Qwen3.5-4B** as its core backbone, replacing the previous 0.8B prototype.
+The system has been officially upgraded to run **Qwen2.5-7B** as its core backbone, replacing the previous 0.8B prototype.
 
-- **Base Model:** `Qwen/Qwen3.5-4B`
+- **Base Model:** `Qwen/Qwen2.5-7B`
 - **Training Method:** GRPO (Generative Reward Policy Optimization)
 - **Quantization:** 4-bit NF4 via `bitsandbytes`
-- **LoRA Config:** rank=16, alpha=16
-- **Inference Runtime Details (Ollama API):**
-  - `num_ctx`: **2048** (Increased to handle the longer contexts required by a 6-agent decision system without truncation).
-  - `num_predict`: **256** (Expanded to allow the 4B model to output well-reasoned, high-quality structured clinical responses).
-  - `think`: Disabled (CoT suppressed to yield instant responses, optimizing system responsiveness for a real-time crisis).
+- **LoRA Config:** rank=16, alpha=32
+- **Inference Runtime:** `models/merged_grpo_final/` (adapter-free safetensors, 5 × 2GB shards)
+  - NF4 4-bit quantized inference via `transformers` + `bitsandbytes`
+  - ~5.3s per structured response on Kaggle T4
 
 ---
 
@@ -52,8 +51,8 @@ The environment simulates a real-time crisis response using six specialized agen
 
 ## 3. Training & Validation Overview
 
-The model was subjected to a rigorous GRPO pipeline evaluated by **8 custom medical verifiers**, categorizing performance into two distinct streams:
-- **LLM-Driven Metrics** (Improved directly by the GRPO loop): `format_compliance`, `reasoning_quality`, `hallucination_gate`, `action_alignment`.
+The model was subjected to a rigorous GRPO pipeline evaluated by **9 custom reward verifiers**:
+- **LLM-Driven Metrics** (Improved directly by the GRPO loop): `format_compliance`, `reasoning_quality`, `no_hallucination`, `action_alignment`, `sandbox_safety`.
 - **State-Driven Metrics** (Environment outcomes resulting from agent policy): `patient_survival`, `icu_efficiency`, `violation_detection`, `response_speed`.
 
 ---
@@ -73,14 +72,14 @@ The system was evaluated against the **TRIAGE Multi-Agent Benchmark**, completin
 | 🔥 Combined Surge | 100% | 100% | 10.0 / 10.0 |
 
 ### Final Score
-**Composite Score: 87.33 / 100 [A]**  
-*(Note: Evaluated on conservative 20-step episodes; 50-step runs are expected to yield 92+).*
+**Composite Score: 90.00 / 100 [Grade A]**  
+*(15 episodes across 5 scenario types, 3 episodes each.)*
 
 ### Comparative Industry Standing
 
 | System | Model Size | Hospital Ops Scope | RL Environment | Score |
 |---|---|---|---|---|
-| **TRIAGE (Current)** | **4B** | **✅ Full 6-agent** | **✅ OpenEnv** | **87.3+** |
+| **TRIAGE (Current)** | **4B** | **✅ Full 6-agent** | **✅ OpenEnv** | **90.00** |
 | MedAgents (ACL 2024) | GPT-4 (1T+) | ❌ QA only | ❌ No env | N/A |
 | Gemini 2.5 Flash | Undisclosed | ❌ Single-agent | ❌ No env | 73.8% ESI |
 

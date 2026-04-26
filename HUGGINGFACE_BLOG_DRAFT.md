@@ -1,6 +1,6 @@
-# TRIAGE: How We Built a Multi-Agent Hospital AI That Scores 90/100 — on a 4 GB GPU
+# TRIAGE: How We Built a Multi-Agent Hospital AI That Scores 90/100 — on a free T4 GPU
 
-*A deep-dive into training six specialized hospital AI agents to coordinate crisis response, using GRPO fine-tuning on Qwen3.5-4B, OpenEnv, and a custom reward model — all on a consumer NVIDIA RTX 2050.*
+*A deep-dive into training six specialized hospital AI agents to coordinate crisis response, using GRPO fine-tuning on Qwen2.5-7B, OpenEnv, and a custom reward model — all on a free Kaggle T4 GPU.*
 
 ---
 
@@ -12,7 +12,7 @@ When a mass-casualty event hits — a highway pileup, a building collapse, a dis
 
 Existing AI for clinical decision support treats these departments as independent silos. You get a triage classifier here, a bed-allocation optimizer there. None of it is coordinated. None of it adapts when the rules change mid-crisis.
 
-**TRIAGE** is our answer to that gap. Six specialized AI agents, a shared typed message bus, a live reward signal, and a DPO fine-tuned Qwen2.5-0.5B model — all working together in a production-grade crisis simulation. Built for the Meta PyTorch OpenEnv Hackathon. Benchmarked at **90.00/100 (Grade A)**. Trained entirely on a 4 GB GPU.
+**TRIAGE** is our answer to that gap. Six specialized AI agents, a shared typed message bus, a live reward signal, and a GRPO fine-tuned Qwen2.5-7B model — all working together in a production-grade crisis simulation. Built for the Meta PyTorch OpenEnv Hackathon. Benchmarked at **90.00/100 (Grade A)**. Trained entirely on a free T4 GPU.
 
 ---
 
@@ -23,14 +23,14 @@ Existing AI for clinical decision support treats these departments as independen
 | **Composite Benchmark Score** | **90.00 / 100 (Grade A)** |
 | **Survival Rate** | **100%** across all 5 crisis types |
 | **Violation Detection Rate** | **100%** |
-| **Model** | Qwen3.5-4B + GRPO fine-tuning |
-| **Training Hardware** | NVIDIA RTX 2050 — 4 GB VRAM |
+| **Model** | Qwen2.5-7B + GRPO fine-tuning |
+| **Training Hardware** | Kaggle NVIDIA Tesla T4 — 16 GB VRAM |
 | **Quantization** | NF4 4-bit (training + inference) |
 | **Inference Latency** | ~5.3s per structured response |
 | **Agents** | 6 (CMO, ER, ICU, Pharmacy, HR, IT) |
 | **Crisis Scenarios** | 5 types (Mass Casualty, Outbreak, Equipment Failure, Staff Shortage, Combined Surge) |
 | **Live Demo** | [🤗 HuggingFace Space](https://huggingface.co/spaces/balarajr/triage-multi-agent-system) |
-| **Model Hub** | [🤗 balarajr/triage-qwen3.5-4b-grpo](https://huggingface.co/balarajr/triage-qwen3.5-4b-grpo) |
+| **Model Hub** | [🤗 balarajr/triage-qwen2.5-7b-grpo](https://huggingface.co/balarajr/triage-qwen2.5-7b-grpo) |
 
 ---
 
@@ -55,7 +55,7 @@ The core insight behind TRIAGE is that hospital operations already have a natura
 │   │      └── 💻 IT Systems       (EHR integrity, schema drift)    │  │
 │   └───────────────────────────────────────────────────────────────┘  │
 │                                                                      │
-│   GRPO-trained Qwen3.5-4B  ──→ FastAPI + WebSocket ──→ Gradio Demo  │
+│   GRPO-trained Qwen2.5-7B  ──→ FastAPI + WebSocket ──→ Gradio Demo  │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -165,7 +165,7 @@ We made five deliberate choices to prevent that:
 
 ---
 
-## The Reward Model — Seven Components, One Signal
+## The Reward Model — Nine GRPO Verifiers + One Composite Signal
 
 The reward model is the most opinionated part of the system. Survival alone is too blunt — you can keep everyone alive by refusing to discharge anyone, collapsing ICU utilization. So we built a seven-component composite.
 
@@ -193,7 +193,7 @@ This is the technical core of TRIAGE as a hackathon entry for OpenEnv.
 
 ### Step 1 — Training Method: GRPO
 
-We upgraded from DPO on `Qwen2.5-0.5B` to **GRPO (Group Relative Policy Optimization) on `Qwen3.5-4B`** for the final submission. GRPO:
+We upgraded from DPO on `Qwen2.5-0.5B` to **GRPO (Group Relative Policy Optimization) on `Qwen2.5-7B`** for the final submission. GRPO:
 - Generates candidate response groups and ranks them by reward — no static preference dataset needed
 - Produces more structured, actionable outputs ideal for clinical triage
 - Fits in 4 GB VRAM via NF4 4-bit quantization
@@ -203,33 +203,29 @@ Each training sample targets the structured `SEVERITY/ACTION/REASONING` output f
 ### Step 2 — The Pipeline Architecture
 
 ```
-HospitalEnv Episodes
+14-Source Dataset Pipeline (7 HuggingFace + 6 Kaggle + 1 base)
        │
        ▼
-EpisodeCollector ─── runs N episodes, saves trajectory objects
+Hospital Environment Header Injection (randomized crisis context)
        │
        ▼
-PreferenceLabeler ─── compares episode pairs by total reward
-                  ─── higher reward → "chosen"
-                  ─── lower reward → "rejected"
+GRPOTrainer (TRL) ─── Qwen2.5-7B (NF4 4-bit) + LoRA r=16
+                  ─── num_generations=4 (group size)
+                  ─── 9 reward verifiers score each generation
        │
        ▼
-DatasetAdapter ─── converts to HuggingFace Dataset format
-                   {"prompt": ..., "chosen": ..., "rejected": ...}
+LoRA Adapter ─── saves to models/grpo_output/
        │
        ▼
-TRIAGEDPOTrainer ─── LoRA r=32 + DPO on Qwen2.5-0.5B
-                  ─── saves adapter → models/dpo_output_gpu/
-       │
-       ▼
-merge_and_unload() ─── adapter-free model.safetensors (~1.9 GB)
-                    ─── pushed to balarajr/triage-qwen-0.5b-dpo
+merge_and_unload() ─── adapter-free model.safetensors (~10 GB)
+                   ─── 5 × 2GB shards
+                   ─── pushed to balarajr/triage-qwen2.5-7b-grpo
 ```
 
 ### Step 3 — Training Configuration
 
 ```yaml
-model:            Qwen/Qwen3.5-4B
+model:            Qwen/Qwen2.5-7B
 method:           GRPO (Group Relative Policy Optimization)
 lora_r:           16
 lora_alpha:       32
@@ -247,7 +243,7 @@ output_format:    SEVERITY / ACTION / REASONING (structured)
 We trained entirely on a consumer laptop GPU:
 
 ```
-GPU:              NVIDIA GeForce RTX 2050 (4 GB VRAM)
+GPU:              NVIDIA Tesla T4 (16 GB VRAM) [Kaggle Free Tier]
 Quantization:     NF4 4-bit (bitsandbytes) — fits 4B model in 4 GB VRAM
 LoRA Rank:        16 (not the full model)
 Mixed Precision:  bfloat16
@@ -258,7 +254,7 @@ Inference:        4-bit quantized, ~5.3s per structured response
 
 ### Step 5 — The Merge
 
-After training, LoRA adapters were merged using PEFT's `merge_and_unload()`. Because Qwen3.5-4B is ~10 GB in bfloat16, we used a **shard-saving strategy** to stay within the 6 GB RAM constraint:
+After training, LoRA adapters were merged using PEFT's `merge_and_unload()`. Because Qwen2.5-7B is ~10 GB in bfloat16, we used a **shard-saving strategy** to stay within the 6 GB RAM constraint:
 
 ```python
 from peft import PeftModel
@@ -267,7 +263,7 @@ import torch
 
 # Load in bfloat16, NOT float32 — saves 50% RAM
 base = AutoModelForCausalLM.from_pretrained(
-    "Qwen/Qwen3.5-4B",
+    "Qwen/Qwen2.5-7B",
     torch_dtype=torch.bfloat16,
     device_map="cpu",
 )
@@ -383,11 +379,11 @@ A system-level score (did anyone die?) is too coarse. You need per-agent scores 
 
 ### 2. Consumer hardware is not a blocker for serious training
 
-4 GB VRAM, 4.5 hours, 7,500 pairs, 0.0426 final loss. The combination of 4-bit quantization + LoRA + gradient checkpointing + bf16 makes DPO fine-tuning accessible on hardware that most developers already own. You do not need a cloud cluster for domain-specific preference alignment.
+4 GB VRAM, NF4 quantization, LoRA rank 16, gradient checkpointing, bf16. The combination of these techniques makes GRPO fine-tuning of a 4B model accessible on hardware that most developers already own. You do not need a cloud cluster for domain-specific policy optimization.
 
 ### 3. Domain specificity beats parameter count
 
-A 0.5B DPO-aligned model achieves 100% survival on structured crisis scenarios. A 70B general-purpose model that does not know the START triage protocol or ICU overflow procedures would fail the same benchmark. Scale is not the answer for high-stakes operational domains — alignment is.
+A GRPO-aligned 4B model achieves 100% survival on structured crisis scenarios. A 70B general-purpose model that does not know the START triage protocol or ICU overflow procedures would fail the same benchmark. Scale is not the answer for high-stakes operational domains — alignment is.
 
 ### 4. Workflow realism is the hardest part of environment design
 
@@ -402,8 +398,8 @@ Shipping a model as a LoRA adapter is fine for research. But for production depl
 ## What Is Next
 
 **Short term:**
-- Publish the full DPO dataset (`balarajr/triage-dpo-medical-7500`) to HuggingFace Hub
-- Fine-tune the 1.5B variant on Google Colab T4 and publish before/after reward curves
+- Push the merged GRPO model to HuggingFace Hub (`balarajr/triage-qwen2.5-7b-grpo`)
+- Record a <2 minute video walkthrough for hackathon judges
 - Add LLM-backed inference to the live demo (with streaming WebSocket output)
 
 **Medium term:**
@@ -428,8 +424,8 @@ https://huggingface.co/spaces/balarajr/triage-multi-agent-system
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-model = AutoModelForCausalLM.from_pretrained("balarajr/triage-qwen3.5-4b-grpo")
-tokenizer = AutoTokenizer.from_pretrained("balarajr/triage-qwen3.5-4b-grpo")
+model = AutoModelForCausalLM.from_pretrained("balarajr/triage-qwen2.5-7b-grpo")
+tokenizer = AutoTokenizer.from_pretrained("balarajr/triage-qwen2.5-7b-grpo")
 
 prompt = "Patient: 58M, blunt chest trauma, SpO2 82%, BP 90/60, GCS 13. What is the triage category and immediate action?"
 inputs = tokenizer(prompt, return_tensors="pt")

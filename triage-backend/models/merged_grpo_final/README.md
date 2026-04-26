@@ -2,7 +2,7 @@
 language:
 - en
 license: apache-2.0
-base_model: Qwen/Qwen3.5-4B
+base_model: Qwen/Qwen2.5-7B
 tags:
 - medical
 - triage
@@ -19,9 +19,9 @@ datasets:
 pipeline_tag: text-generation
 ---
 
-# TRIAGE — Hospital Crisis Agent (Qwen3.5-4B GRPO)
+# TRIAGE — Hospital Crisis Agent (Qwen2.5-7B GRPO)
 
-A **GRPO fine-tuned** version of `Qwen3.5-4B` specialized for **hospital crisis management** 
+A **GRPO fine-tuned** version of `Qwen2.5-7B` specialized for **hospital crisis management** 
 and **clinical triage decision-making**, trained as part of the TRIAGE multi-agent system.
 
 ## Model Description
@@ -59,7 +59,7 @@ This model serves as the backbone for a **6-agent hospital crisis simulation** t
 
 | Parameter | Value |
 |---|---|
-| Base model | Qwen/Qwen3.5-4B |
+| Base model | Qwen/Qwen2.5-7B |
 | Training method | GRPO (Generative Reward Policy Optimization) |
 | LoRA rank | 16 |
 | LoRA alpha | 16 |

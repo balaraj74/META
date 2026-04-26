@@ -46,6 +46,7 @@ from triage.api.schemas import (
 from triage.env.hospital_env import HospitalEnv
 from triage.env.state import AgentType, CrisisType
 from triage.agents.message_bus import MessageBus
+from triage.agents.model_router import ModelRouter
 from triage.agents.orchestrator import AGENT_STEP_ORDER
 from triage.agents.specialized import create_all_agents
 from triage.rewards.reward_model import RewardModel
@@ -345,6 +346,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application startup/shutdown."""
     logger.info("TRIAGE API starting up...")
     await _ensure_grpo_env_server()
+    actual_mode = ModelRouter.initialize_from_env()
+    logger.info("ModelRouter initialized in %s mode: %s", actual_mode, ModelRouter.get_instance().status())
     yield
     logger.info("TRIAGE API shutting down...")
     if sim_manager.status == SimulationStatus.RUNNING:
@@ -395,6 +398,12 @@ async def health_check() -> HealthResponse:
             "reward_model": "ready",
         },
     )
+
+
+@app.get("/api/agents/model-router/status", response_model=ApiResponse)
+async def model_router_status() -> ApiResponse:
+    """Return model backend and routing status."""
+    return ApiResponse(success=True, data=ModelRouter.get_instance().status())
 
 
 # ── Simulation Control ───────────────────────────────────────────────────────

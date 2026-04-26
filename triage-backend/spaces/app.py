@@ -3,9 +3,9 @@
 spaces/app.py — Gradio demo for TRIAGE multi-agent hospital crisis system.
 
 Tabs:
-  1. Live Simulation   — rule-based agent decisions (no GPU)
+  1. Live Simulation   — rule-based agent decisions (no hardware dependency)
   2. GRPO Comparison   — before/after reward verifier benchmark
-  3. Reward Inspector   — test any completion against all 8 verifiers
+  3. Reward Inspector   — test any completion against all 9 verifiers
 
 Deploy to HuggingFace Spaces:
     1. Create a new Space at https://huggingface.co/spaces
@@ -331,7 +331,7 @@ COMPARISON_SCENARIOS = [
 
 
 def run_grpo_comparison():
-    """Run all 8 verifiers on baseline vs trained completions for all scenarios."""
+    """Run all 9 verifiers on baseline vs trained completions for all scenarios."""
     if not HAS_VERIFIERS:
         return "❌ Verifiers module not available. Install triage package.", ""
 
@@ -410,7 +410,7 @@ def run_grpo_comparison():
 
 def inspect_reward(completion_text: str, crisis_type: str, icu_occ: float,
                    critical_count: int, violations_in: int, violations_caught: int):
-    """Score a custom completion against all 8 verifiers."""
+    """Score a custom completion against all 9 verifiers."""
     if not HAS_VERIFIERS:
         return "❌ Verifiers module not available."
 
@@ -462,8 +462,8 @@ def build_ui():
 A **multi-agent AI system** where 6 specialized hospital agents coordinate in real-time to manage crisis scenarios.
 Each agent uses **GRPO-trained** clinical reasoning with 9 independent reward verifiers.
 
-> **Training:** RTX 2050 (4GB VRAM) · LoRA rank=16 · 4-bit quantization · GRPO with curriculum scheduling  
-> **Verifiers:** survival, ICU efficiency, violation detection, format compliance, reasoning quality, speed, hallucination gate, action alignment
+> **Training:** Kaggle T4 (16GB VRAM) · LoRA rank=16 · 4-bit quantization · GRPO with curriculum scheduling  
+> **Verifiers:** survival, ICU efficiency, violation detection, format compliance, reasoning quality, speed, hallucination gate, action alignment, clinical_safety
         """)
 
         with gr.Tabs():
@@ -499,7 +499,6 @@ Each agent uses **GRPO-trained** clinical reasoning with 9 independent reward ve
                     with gr.Column(scale=2):
                         output = gr.Markdown(
                             value="Select a crisis scenario and click **Run Simulation** to watch the agents coordinate in real-time.",
-                            label="Agent Decision Log",
                         )
 
                 run_btn.click(fn=run_simulation, inputs=[crisis_select, steps_slider], outputs=output)
@@ -520,8 +519,8 @@ All 9 reward verifiers are applied to both outputs — showing exactly what impr
                 """)
 
                 compare_btn = gr.Button("🔬 Run Comparison", elem_id="compare-btn", variant="primary")
-                summary_output = gr.Markdown(label="Summary")
-                detail_output = gr.Markdown(label="Detailed Breakdown")
+                summary_output = gr.Markdown()
+                detail_output = gr.Markdown()
 
                 compare_btn.click(fn=run_grpo_comparison, outputs=[summary_output, detail_output])
 
@@ -552,7 +551,7 @@ Use JSON format for best results: `{"action_type": "...", "target_id": 0, "prior
                         inspect_btn = gr.Button("🔍 Score Completion", elem_id="inspect-btn", variant="primary")
 
                     with gr.Column(scale=1):
-                        inspect_output = gr.Markdown(label="Verifier Scores")
+                        inspect_output = gr.Markdown()
 
                 inspect_btn.click(
                     fn=inspect_reward,

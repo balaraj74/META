@@ -28,6 +28,8 @@ except Exception:  # pragma: no cover - optional ChromaDB dependency
     class StrategyMemory:
         def get_strategy_prompt(self, *args, **kwargs) -> str:
             return ""
+        def query_lessons(self, *args, **kwargs) -> list[dict[str, Any]]:
+            return []
 from triage.env.state import (
     AgentAction,
     AgentMessage,
@@ -249,6 +251,7 @@ class BaseAgent(ABC):
         self,
         prompt: str,
         state_context: str,
+        crisis_type: str | None = None,
         temperature: float = 0.3,
     ) -> dict[str, Any]:
         """Call the LLM with the agent's system prompt + context.
@@ -260,10 +263,16 @@ class BaseAgent(ABC):
 
         Returns parsed JSON response from the model.
         """
+        memory_block = self._build_memory_context(
+            state_context=state_context,
+            crisis_type=crisis_type,
+        )
         full_prompt = f"""
 {self.system_prompt}
 
 {state_context}
+
+{memory_block}
 
 ---
 
@@ -375,6 +384,34 @@ Respond with a JSON object containing:
                 self.agent_type.value, e,
             )
             return {"actions": [], "messages": []}
+
+    def _build_memory_context(self, state_context: str, crisis_type: str | None = None) -> str:
+        """Retrieve strategy lessons and format them for prompt injection."""
+        try:
+            lessons = self.memory.query_lessons(
+                self.agent_type.value,
+                current_context=state_context,
+                top_k=3,
+                crisis_type=crisis_type,
+            )
+        except Exception:
+            logger.debug("Strategy memory unavailable for %s", self.agent_type.value, exc_info=True)
+            lessons = []
+
+        if not lessons:
+            return "## Strategy Memory\n(no prior lessons found)"
+
+        lines = ["## Strategy Memory (top lessons)"]
+        for idx, lesson in enumerate(lessons, start=1):
+            lines.append(
+                (
+                    f"{idx}. Action: {lesson.get('action_taken', 'n/a')} | "
+                    f"Outcome: {lesson.get('outcome', 'n/a')} | "
+                    f"Reward: {float(lesson.get('reward_delta', lesson.get('reward', 0.0))):.2f}"
+                )
+            )
+        lines.append("Use these lessons only when they fit the current context.")
+        return "\n".join(lines)
 
     # ── Internal ─────────────────────────────────────────
 

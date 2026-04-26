@@ -199,12 +199,29 @@ class EpisodeCollector:
 
         # Record strategies
         for agent_type, agent in agents.items():
+            recent_actions = agent.get_recent_actions(limit=3)
+            action_text = " | ".join(
+                f"{item.get('action_type', 'unknown')}:{item.get('reasoning', '')[:90]}"
+                for item in recent_actions
+            ) or "No significant actions recorded"
             lesson = {
-                "context": f"Crisis: {state.crisis.type.value}, Difficulty: {state.crisis.severity}",
-                "action_taken": f"{agent.actions_taken} actions taken during episode",
-                "outcome": f"Survival: {result.survival_rate:.1f}%",
+                "context": (
+                    f"Crisis={state.crisis.type.value}; severity={state.crisis.severity}; "
+                    f"icu_occupancy={state.icu_occupancy:.2f}; staff_ratio={state.resources.staff_ratio:.2f}; "
+                    f"deceased={state.deceased_count}; critical={state.critical_count}"
+                ),
+                "action_taken": action_text,
+                "description": action_text,
+                "outcome": (
+                    f"survival_rate={result.survival_rate:.3f}; "
+                    f"deceased={result.deceased}; discharged={result.discharged}"
+                ),
                 "reward_delta": float(result.total_reward),
                 "crisis_type": state.crisis.type.value,
+                "severity": state.crisis.severity,
+                "staff_ratio": float(state.resources.staff_ratio),
+                "icu_occupancy": float(state.icu_occupancy),
+                "episode": int(result.episode_id),
                 "step": result.steps,
             }
             self.strategy_memory.add_lesson(agent_type.value, lesson)

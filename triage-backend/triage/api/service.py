@@ -1022,19 +1022,28 @@ class BackendService:
         with get_session() as db:
             for key, strategies in memory.get_all().items():
                 for strategy in strategies:
+                    context_payload = strategy.get("context", {})
+                    if isinstance(context_payload, str):
+                        context_dump = context_payload
+                    else:
+                        context_dump = json.dumps(context_payload, sort_keys=True)
+                    description = str(strategy.get("description", strategy.get("action_taken", "")))
+                    outcome_delta = float(strategy.get("reward_delta", strategy.get("reward", 0.0)))
+                    confidence = float(strategy.get("success_rate", 1.0 if outcome_delta >= 0 else 0.0))
+                    times_applied = int(strategy.get("times_used", 1))
                     record = StrategyLessonRecord(
-                        id=strategy["id"],
-                        episode_observed=strategy["episode"],
-                        pattern=strategy["description"],
-                        context=json.dumps(strategy.get("context", {}), sort_keys=True),
-                        correction=strategy["description"],
-                        confidence=float(strategy.get("success_rate", 0.0)),
-                        outcome_delta=float(strategy.get("reward", 0.0)),
+                        id=str(strategy.get("id", uuid.uuid4().hex)),
+                        episode_observed=int(strategy.get("episode", strategy.get("step", 0))),
+                        pattern=description,
+                        context=context_dump,
+                        correction=str(strategy.get("outcome", description)),
+                        confidence=confidence,
+                        outcome_delta=outcome_delta,
                         agent_type=strategy.get("agent_type"),
                         crisis_type=strategy.get("crisis_type"),
-                        times_applied=int(strategy.get("times_used", 0)),
+                        times_applied=times_applied,
                         times_successful=int(
-                            round(strategy.get("times_used", 0) * strategy.get("success_rate", 0.0))
+                            round(times_applied * confidence)
                         ),
                     )
                     db.merge(record)
